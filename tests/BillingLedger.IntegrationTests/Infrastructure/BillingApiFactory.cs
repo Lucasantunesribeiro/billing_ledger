@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using BillingLedger.Billing.Api.Infrastructure.Messaging;
 using BillingLedger.Billing.Api.Infrastructure.Persistence;
 using BillingLedger.BuildingBlocks.Messaging;
@@ -24,6 +25,13 @@ public class BillingApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+
+        // Inject known webhook secret so tests can compute valid HMAC signatures
+        builder.ConfigureAppConfiguration(cfg =>
+            cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Payments:WebhookSecret"] = "test-secret"
+            }));
 
         builder.ConfigureServices(services =>
         {

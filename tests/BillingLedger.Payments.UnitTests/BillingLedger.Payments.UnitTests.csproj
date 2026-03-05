@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -12,6 +12,8 @@
     <PackageReference Include="FluentAssertions" Version="8.8.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="MassTransit" Version="9.0.1" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
@@ -23,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BillingLedger.Payments.Worker\BillingLedger.Payments.Worker.csproj" />
     <ProjectReference Include="..\..\src\BillingLedger.SharedKernel\BillingLedger.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\src\BillingLedger.Contracts\BillingLedger.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
