@@ -75,6 +75,8 @@ public sealed class DomainEventToOutboxInterceptor : SaveChangesInterceptor
                 Payload = JsonSerializer.Serialize(new InvoicePaidV1
                 {
                     InvoiceId = e.InvoiceId,
+                    Amount = e.Amount.Amount,
+                    Currency = e.Amount.Currency,
                     PaidAt = e.PaidAt,
                     CorrelationId = e.CorrelationId
                 }),

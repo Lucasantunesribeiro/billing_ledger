@@ -23,6 +23,7 @@ public sealed record InvoiceIssuedDomainEvent : DomainEvent
 public sealed record InvoicePaidDomainEvent : DomainEvent
 {
     public required Guid InvoiceId { get; init; }
+    public required Money Amount { get; init; }
     public required DateTime PaidAt { get; init; }
 }
 

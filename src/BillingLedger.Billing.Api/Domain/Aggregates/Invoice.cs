@@ -98,6 +98,7 @@ public sealed class Invoice : AggregateRoot
         RaiseDomainEvent(new InvoicePaidDomainEvent
         {
             InvoiceId = Id.Value,
+            Amount = Amount,
             PaidAt = PaidAt.Value,
             CorrelationId = correlationId
         });
