@@ -1,0 +1,10 @@
+﻿namespace BillingLedger.Billing.UnitTests;
+
+public class UnitTest1
+{
+    [Fact]
+    public void Test1()
+    {
+
+    }
+}

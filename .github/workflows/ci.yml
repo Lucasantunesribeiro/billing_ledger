@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: billing_user
+          POSTGRES_PASSWORD: billing_pass
+          POSTGRES_DB: billing_ledger
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Format check
+        run: dotnet format --verify-no-changes
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Unit Tests
+        run: |
+          dotnet test tests/BillingLedger.Billing.UnitTests --no-build --configuration Release --logger trx
+          dotnet test tests/BillingLedger.Payments.UnitTests --no-build --configuration Release --logger trx
+          dotnet test tests/BillingLedger.Ledger.UnitTests   --no-build --configuration Release --logger trx
+
+      - name: Integration Tests
+        env:
+          ConnectionStrings__Postgres: "Host=localhost;Port=5432;Database=billing_ledger;Username=billing_user;Password=billing_pass"
+          ConnectionStrings__Redis: "localhost:6379"
+        run: dotnet test tests/BillingLedger.IntegrationTests --no-build --configuration Release --logger trx
+
+      - name: Publish Test Results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Test Results
+          path: "**/*.trx"
+          reporter: dotnet-trx
