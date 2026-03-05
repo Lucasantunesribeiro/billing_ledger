@@ -1,7 +1,10 @@
 using BillingLedger.Billing.Api.Domain.Repositories;
+using BillingLedger.Billing.Api.Infrastructure.Messaging;
 using BillingLedger.Billing.Api.Infrastructure.Observability;
 using BillingLedger.Billing.Api.Infrastructure.Persistence;
+using BillingLedger.Billing.Api.Infrastructure.Persistence.Interceptors;
 using BillingLedger.Billing.Api.Infrastructure.Persistence.Repositories;
+using BillingLedger.BuildingBlocks.Messaging;
 using BillingLedger.BuildingBlocks.Observability;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,8 +21,11 @@ builder.Services.AddSwaggerGen(c => c.SwaggerDoc("v1", new() { Title = "BillingL
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
+// ─── Outbox Interceptor ───────────────────────────────────────────────────────
+builder.Services.AddSingleton<DomainEventToOutboxInterceptor>();
+
 // ─── Database ────────────────────────────────────────────────────────────────
-builder.Services.AddDbContext<BillingDbContext>(options =>
+builder.Services.AddDbContext<BillingDbContext>((sp, options) =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("Postgres"),
         npgsql => npgsql.MigrationsHistoryTable("__ef_migrations", "billing")));
@@ -27,6 +33,13 @@ builder.Services.AddDbContext<BillingDbContext>(options =>
 // ─── Domain Services ─────────────────────────────────────────────────────────
 builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
 builder.Services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<BillingDbContext>());
+
+// ─── Messaging ────────────────────────────────────────────────────────────────
+builder.Services.AddSingleton<IEventBus, NullEventBus>();
+
+// ─── Outbox Dispatcher ────────────────────────────────────────────────────────
+builder.Services.AddSingleton<OutboxDispatcherService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<OutboxDispatcherService>());
 
 // ─── Build ────────────────────────────────────────────────────────────────────
 var app = builder.Build();

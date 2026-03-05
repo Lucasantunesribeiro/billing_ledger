@@ -60,6 +60,48 @@ public class InvoicesController(
         return Ok(InvoiceResponse.From(invoice));
     }
 
+    /// <summary>Issues an invoice (Draft → Issued).</summary>
+    [HttpPost("{id:guid}/issue")]
+    [ProducesResponseType(typeof(InvoiceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Issue(Guid id, CancellationToken ct)
+    {
+        var invoice = await repository.GetByIdAsync(id, ct);
+        if (invoice is null)
+            return Problem(title: "Not Found", detail: $"Invoice '{id}' not found.", statusCode: 404);
+
+        var correlationId = HttpContext.Items["X-Correlation-Id"] is string cid && Guid.TryParse(cid, out var parsed)
+            ? parsed
+            : Guid.NewGuid();
+
+        invoice.Issue(correlationId);
+        await unitOfWork.SaveChangesAsync(ct);
+
+        return Ok(InvoiceResponse.From(invoice));
+    }
+
+    /// <summary>Cancels an invoice (Draft|Issued|Overdue → Cancelled).</summary>
+    [HttpPost("{id:guid}/cancel")]
+    [ProducesResponseType(typeof(InvoiceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Cancel(Guid id, CancellationToken ct)
+    {
+        var invoice = await repository.GetByIdAsync(id, ct);
+        if (invoice is null)
+            return Problem(title: "Not Found", detail: $"Invoice '{id}' not found.", statusCode: 404);
+
+        var correlationId = HttpContext.Items["X-Correlation-Id"] is string cid && Guid.TryParse(cid, out var parsed)
+            ? parsed
+            : Guid.NewGuid();
+
+        invoice.Cancel(correlationId);
+        await unitOfWork.SaveChangesAsync(ct);
+
+        return Ok(InvoiceResponse.From(invoice));
+    }
+
     /// <summary>Lists invoices with optional filters.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<InvoiceResponse>), StatusCodes.Status200OK)]

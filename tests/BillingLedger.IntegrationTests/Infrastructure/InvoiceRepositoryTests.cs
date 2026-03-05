@@ -29,7 +29,7 @@ public class InvoiceRepositoryTests : IAsyncLifetime
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations", "billing"))
             .Options;
 
-        _ctx = new BillingDbContext(options);
+        _ctx = new BillingDbContext(options, new BillingLedger.Billing.Api.Infrastructure.Persistence.Interceptors.DomainEventToOutboxInterceptor());
         await _ctx.Database.MigrateAsync();
         _repo = new InvoiceRepository(_ctx);
     }

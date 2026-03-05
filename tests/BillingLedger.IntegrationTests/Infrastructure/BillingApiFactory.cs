@@ -1,8 +1,12 @@
+using BillingLedger.Billing.Api.Infrastructure.Messaging;
 using BillingLedger.Billing.Api.Infrastructure.Persistence;
+using BillingLedger.BuildingBlocks.Messaging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
 
 namespace BillingLedger.IntegrationTests.Infrastructure;
@@ -15,6 +19,8 @@ public class BillingApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         .WithPassword("billing_pass")
         .Build();
 
+    public FakeEventBus EventBus { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -26,10 +32,24 @@ public class BillingApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 d => d.ServiceType == typeof(DbContextOptions<BillingDbContext>));
             if (descriptor is not null) services.Remove(descriptor);
 
-            services.AddDbContext<BillingDbContext>(options =>
+            services.AddDbContext<BillingDbContext>((sp, options) =>
                 options.UseNpgsql(
                     _postgres.GetConnectionString(),
                     npgsql => npgsql.MigrationsHistoryTable("__ef_migrations", "billing")));
+
+            // Replace real IEventBus with FakeEventBus
+            services.RemoveAll<IEventBus>();
+            services.AddSingleton<IEventBus>(EventBus);
+
+            // Prevent background services (OutboxDispatcher) from auto-running during tests
+            // The dispatcher is still resolvable by concrete type for manual test invocation
+            var hostedServices = services
+                .Where(d => d.ServiceType == typeof(IHostedService))
+                .ToList();
+            foreach (var svc in hostedServices) services.Remove(svc);
+
+            // Re-register OutboxDispatcherService as singleton (not hosted) so tests can resolve it
+            services.AddSingleton<OutboxDispatcherService>();
         });
     }
 

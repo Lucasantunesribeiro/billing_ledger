@@ -1,5 +1,7 @@
+using BillingLedger.Billing.Api.Infrastructure.Persistence.Interceptors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BillingLedger.Billing.Api.Infrastructure.Persistence;
 
@@ -16,6 +18,6 @@ internal sealed class BillingDbContextFactory : IDesignTimeDbContextFactory<Bill
             "Host=localhost;Port=5432;Database=billing_ledger;Username=billing_user;Password=billing_pass",
             npgsql => npgsql.MigrationsHistoryTable("__ef_migrations", "billing"));
 
-        return new BillingDbContext(optionsBuilder.Options);
+        return new BillingDbContext(optionsBuilder.Options, new DomainEventToOutboxInterceptor());
     }
 }
