@@ -43,8 +43,7 @@ public class InvoicesController(
         var externalRef = string.IsNullOrWhiteSpace(request.ExternalReference)
             ? $"INV-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}"
             : request.ExternalReference;
-
-        var invoice = Invoice.Create(request.CustomerId, money, request.DueDate, externalRef, CorrelationId);
+        var invoice = Invoice.Create(request.CustomerId, money, request.DueDate.ToUniversalTime(), externalRef, CorrelationId);
 
         await repository.AddAsync(invoice, ct);
         auditService.Record(ActorUserId, "InvoiceCreated", "Invoice", invoice.Id.Value.ToString());
@@ -119,8 +118,8 @@ public class InvoicesController(
         {
             Status = status,
             CustomerId = customerId,
-            From = from,
-            To = to
+            From = from?.ToUniversalTime(),
+            To = to?.ToUniversalTime()
         };
 
         var invoices = await repository.GetAsync(filter, ct);
