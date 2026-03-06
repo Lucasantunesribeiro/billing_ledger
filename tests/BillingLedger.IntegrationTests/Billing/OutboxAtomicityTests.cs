@@ -14,7 +14,7 @@ namespace BillingLedger.IntegrationTests.Billing;
 public class OutboxAtomicityTests(BillingApiFactory factory)
     : IClassFixture<BillingApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateAuthenticatedClient();
 
     // ─── ISSUE ───────────────────────────────────────────────────────────────
 

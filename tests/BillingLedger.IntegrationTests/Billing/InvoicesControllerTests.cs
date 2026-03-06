@@ -11,7 +11,7 @@ namespace BillingLedger.IntegrationTests.Billing;
 public class InvoicesControllerTests(BillingApiFactory factory)
     : IClassFixture<BillingApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateAuthenticatedClient();
 
     // ─── POST /api/invoices ──────────────────────────────────────────────────
 

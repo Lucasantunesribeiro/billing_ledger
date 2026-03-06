@@ -23,14 +23,14 @@ public sealed class PaymentAttempt
         string provider,
         decimal amount,
         Guid correlationId) => new()
-    {
-        Id = Guid.NewGuid(),
-        InvoiceId = invoiceId,
-        ExternalPaymentId = externalPaymentId,
-        Provider = provider,
-        Amount = amount,
-        Status = PaymentAttemptStatus.Pending,
-        ReceivedAt = DateTime.UtcNow,
-        CorrelationId = correlationId
-    };
+        {
+            Id = Guid.NewGuid(),
+            InvoiceId = invoiceId,
+            ExternalPaymentId = externalPaymentId,
+            Provider = provider,
+            Amount = amount,
+            Status = PaymentAttemptStatus.Pending,
+            ReceivedAt = DateTime.UtcNow,
+            CorrelationId = correlationId
+        };
 }

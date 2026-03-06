@@ -1,8 +1,11 @@
+using System.Security.Claims;
 using BillingLedger.Billing.Api.Application.Commands;
 using BillingLedger.Billing.Api.Application.Queries;
 using BillingLedger.Billing.Api.Domain.Aggregates;
 using BillingLedger.Billing.Api.Domain.Repositories;
+using BillingLedger.Billing.Api.Infrastructure.Audit;
 using BillingLedger.SharedKernel.Primitives;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BillingLedger.Billing.Api.Controllers;
@@ -10,12 +13,23 @@ namespace BillingLedger.Billing.Api.Controllers;
 [ApiController]
 [Route("api/invoices")]
 [Produces("application/json")]
+[Authorize]
 public class InvoicesController(
     IInvoiceRepository repository,
-    IUnitOfWork unitOfWork) : ControllerBase
+    IUnitOfWork unitOfWork,
+    IAuditService auditService) : ControllerBase
 {
+    private string ActorUserId =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+
+    private Guid CorrelationId =>
+        HttpContext.Items["X-Correlation-Id"] is string cid && Guid.TryParse(cid, out var parsed)
+            ? parsed
+            : Guid.NewGuid();
+
     /// <summary>Creates a new invoice in Draft status.</summary>
     [HttpPost]
+    [Authorize(Policy = "Finance")]
     [ProducesResponseType(typeof(InvoiceResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create(
@@ -34,13 +48,10 @@ public class InvoicesController(
             ? $"INV-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}"
             : request.ExternalReference;
 
-        var correlationId = HttpContext.Items["X-Correlation-Id"] is string cid && Guid.TryParse(cid, out var parsed)
-            ? parsed
-            : Guid.NewGuid();
-
-        var invoice = Invoice.Create(request.CustomerId, money, request.DueDate, externalRef, correlationId);
+        var invoice = Invoice.Create(request.CustomerId, money, request.DueDate, externalRef, CorrelationId);
 
         await repository.AddAsync(invoice, ct);
+        auditService.Record(ActorUserId, "InvoiceCreated", "Invoice", invoice.Id.Value.ToString());
         await unitOfWork.SaveChangesAsync(ct);
 
         var response = InvoiceResponse.From(invoice);
@@ -62,6 +73,7 @@ public class InvoicesController(
 
     /// <summary>Issues an invoice (Draft → Issued).</summary>
     [HttpPost("{id:guid}/issue")]
+    [Authorize(Policy = "Finance")]
     [ProducesResponseType(typeof(InvoiceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -71,11 +83,8 @@ public class InvoicesController(
         if (invoice is null)
             return Problem(title: "Not Found", detail: $"Invoice '{id}' not found.", statusCode: 404);
 
-        var correlationId = HttpContext.Items["X-Correlation-Id"] is string cid && Guid.TryParse(cid, out var parsed)
-            ? parsed
-            : Guid.NewGuid();
-
-        invoice.Issue(correlationId);
+        invoice.Issue(CorrelationId);
+        auditService.Record(ActorUserId, "InvoiceIssued", "Invoice", id.ToString());
         await unitOfWork.SaveChangesAsync(ct);
 
         return Ok(InvoiceResponse.From(invoice));
@@ -83,6 +92,7 @@ public class InvoicesController(
 
     /// <summary>Cancels an invoice (Draft|Issued|Overdue → Cancelled).</summary>
     [HttpPost("{id:guid}/cancel")]
+    [Authorize(Policy = "Finance")]
     [ProducesResponseType(typeof(InvoiceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -92,11 +102,8 @@ public class InvoicesController(
         if (invoice is null)
             return Problem(title: "Not Found", detail: $"Invoice '{id}' not found.", statusCode: 404);
 
-        var correlationId = HttpContext.Items["X-Correlation-Id"] is string cid && Guid.TryParse(cid, out var parsed)
-            ? parsed
-            : Guid.NewGuid();
-
-        invoice.Cancel(correlationId);
+        invoice.Cancel(CorrelationId);
+        auditService.Record(ActorUserId, "InvoiceCancelled", "Invoice", id.ToString());
         await unitOfWork.SaveChangesAsync(ct);
 
         return Ok(InvoiceResponse.From(invoice));

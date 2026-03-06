@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using Microsoft.Extensions.Configuration;
 using BillingLedger.Billing.Api.Infrastructure.Messaging;
 using BillingLedger.Billing.Api.Infrastructure.Persistence;
@@ -30,7 +31,10 @@ public class BillingApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.ConfigureAppConfiguration(cfg =>
             cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Payments:WebhookSecret"] = "test-secret"
+                ["Payments:WebhookSecret"] = "test-secret",
+                ["Jwt:Issuer"] = JwtTestHelper.Issuer,
+                ["Jwt:Audience"] = JwtTestHelper.Audience,
+                ["Jwt:SigningKey"] = JwtTestHelper.SigningKey
             }));
 
         builder.ConfigureServices(services =>
@@ -70,6 +74,18 @@ public class BillingApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         await using var scope = Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
         await db.Database.MigrateAsync();
+    }
+
+    /// <summary>
+    /// Creates an HTTP client pre-loaded with a signed JWT for the given role.
+    /// Use for endpoints that require authentication.
+    /// </summary>
+    public HttpClient CreateAuthenticatedClient(string userId = "test-user", string role = "Finance")
+    {
+        var client = CreateClient();
+        var token = JwtTestHelper.GenerateToken(userId, role);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
     }
 
     public new async Task DisposeAsync()

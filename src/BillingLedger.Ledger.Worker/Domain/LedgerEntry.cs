@@ -28,14 +28,14 @@ public sealed class LedgerEntry
         string currency,
         Guid eventId,
         Guid correlationId) => new()
-    {
-        Id = Guid.NewGuid(),
-        InvoiceId = invoiceId,
-        Type = type,
-        Amount = amount,
-        Currency = currency,
-        EventId = eventId,
-        CorrelationId = correlationId,
-        RecordedAt = DateTime.UtcNow
-    };
+        {
+            Id = Guid.NewGuid(),
+            InvoiceId = invoiceId,
+            Type = type,
+            Amount = amount,
+            Currency = currency,
+            EventId = eventId,
+            CorrelationId = correlationId,
+            RecordedAt = DateTime.UtcNow
+        };
 }
