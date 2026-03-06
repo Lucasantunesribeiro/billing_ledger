@@ -4,16 +4,20 @@ using System.Text.Json;
 using BillingLedger.Billing.Api.Application.Commands;
 using BillingLedger.BuildingBlocks.Messaging;
 using BillingLedger.Contracts.Payments;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace BillingLedger.Billing.Api.Controllers;
 
 [ApiController]
 [Route("api/payments")]
 [Produces("application/json")]
+[EnableRateLimiting("webhook")]
 public sealed class PaymentsController(
     IEventBus eventBus,
     IConfiguration config,
+    IValidator<WebhookPaymentRequest> webhookValidator,
     ILogger<PaymentsController> logger) : ControllerBase
 {
     /// <summary>
@@ -46,6 +50,12 @@ public sealed class PaymentsController(
 
         if (payload is null)
             return Problem(title: "Bad Request", detail: "Invalid request body.", statusCode: 400);
+
+        var validation = await webhookValidator.ValidateAsync(payload);
+        if (!validation.IsValid)
+            return ValidationProblem(new ValidationProblemDetails(
+                validation.Errors.GroupBy(e => e.PropertyName)
+                    .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())));
 
         var correlationId = HttpContext.Items["X-Correlation-Id"] is string cid
             && Guid.TryParse(cid, out var parsed)

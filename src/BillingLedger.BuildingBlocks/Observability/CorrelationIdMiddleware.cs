@@ -10,8 +10,12 @@ public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Correl
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var correlationId = context.Request.Headers[HeaderName].FirstOrDefault()
-            ?? Guid.NewGuid().ToString();
+        // V5 FIX: Validate that the incoming header is a well-formed GUID.
+        // Arbitrary strings accepted as-is are a log-injection vector (newlines, control chars).
+        var rawHeader = context.Request.Headers[HeaderName].FirstOrDefault();
+        var correlationId = Guid.TryParse(rawHeader, out var parsed)
+            ? parsed.ToString()
+            : Guid.NewGuid().ToString();
 
         context.Items[HeaderName] = correlationId;
         context.Response.Headers[HeaderName] = correlationId;

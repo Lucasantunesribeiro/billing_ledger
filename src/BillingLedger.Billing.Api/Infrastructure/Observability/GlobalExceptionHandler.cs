@@ -29,6 +29,12 @@ internal sealed class GlobalExceptionHandler(
 
         httpContext.Response.StatusCode = statusCode;
 
+        // V2 FIX: Never expose raw exception.Message for 500 errors — internal details may
+        // contain connection strings, file paths, or other sensitive information.
+        var detail = statusCode == StatusCodes.Status500InternalServerError
+            ? "An internal server error occurred. Use the CorrelationId to trace this issue."
+            : exception.Message;
+
         return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
@@ -37,7 +43,7 @@ internal sealed class GlobalExceptionHandler(
             {
                 Status = statusCode,
                 Title = title,
-                Detail = exception.Message
+                Detail = detail
             }
         });
     }

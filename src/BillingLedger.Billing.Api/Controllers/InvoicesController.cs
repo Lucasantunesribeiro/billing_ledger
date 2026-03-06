@@ -36,12 +36,8 @@ public class InvoicesController(
         [FromBody] CreateInvoiceRequest request,
         CancellationToken ct)
     {
-        if (request.Amount < 0)
-            return Problem(title: "Invalid Amount", detail: "Amount must be non-negative.", statusCode: 400);
-
-        if (request.DueDate <= DateTime.UtcNow)
-            return Problem(title: "Invalid Due Date", detail: "DueDate must be in the future.", statusCode: 400);
-
+        // Input validation is handled by FluentValidation (AddFluentValidationAutoValidation).
+        // ModelState is invalid → 400 with ValidationProblemDetails automatically returned.
         var money = Money.Of(request.Amount, request.Currency);
 
         var externalRef = string.IsNullOrWhiteSpace(request.ExternalReference)

@@ -1,5 +1,7 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using BillingLedger.Billing.Api.Application.Consumers;
+using BillingLedger.Billing.Api.Application.Validators;
 using BillingLedger.Billing.Api.Domain.Repositories;
 using BillingLedger.Billing.Api.Infrastructure.Audit;
 using BillingLedger.Billing.Api.Infrastructure.Messaging;
@@ -9,6 +11,8 @@ using BillingLedger.Billing.Api.Infrastructure.Persistence.Interceptors;
 using BillingLedger.Billing.Api.Infrastructure.Persistence.Repositories;
 using BillingLedger.BuildingBlocks.Messaging;
 using BillingLedger.BuildingBlocks.Observability;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +31,53 @@ builder.Host.UseSerilog((ctx, lc) => lc
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
+
+// ─── FluentValidation ─────────────────────────────────────────────────────────
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateInvoiceRequestValidator>();
+
+// ─── Rate Limiting ────────────────────────────────────────────────────────────
+// Global: 100 req/min per IP — sliding window partitioned by remote IP.
+// "webhook" named policy: 20 req/min (tighter limit for the unauthenticated endpoint).
+builder.Services.AddRateLimiter(options =>
+{
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+
+    options.AddPolicy<string>("webhook", ctx =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (ctx, ct) =>
+    {
+        ctx.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await ctx.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            type = "https://tools.ietf.org/html/rfc6585#section-4",
+            title = "Too Many Requests",
+            status = 429,
+            detail = "Rate limit exceeded. Please slow down your requests."
+        }, ct);
+    };
+});
 
 // ─── Health Checks ───────────────────────────────────────────────────────────
 builder.Services.AddHealthChecks();
@@ -53,7 +104,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(jwtSection["SigningKey"]!))
+                Encoding.UTF8.GetBytes(jwtSection["SigningKey"]!)),
+            // V3 FIX: Tokens are invalid exactly at expiry — no tolerance window.
+            // Default ClockSkew=5min allows stolen tokens to be used post-expiry.
+            ClockSkew = TimeSpan.Zero,
+            // Pin to HS256 — reject tokens signed with unexpected algorithms (incl. "none").
+            ValidAlgorithms = ["HS256"]
         };
     });
 
@@ -167,6 +223,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 app.MapHealthChecks("/health");
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
