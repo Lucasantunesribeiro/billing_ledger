@@ -102,26 +102,29 @@ dotnet run --project src/BillingLedger.Payments.Worker
 dotnet run --project src/BillingLedger.Ledger.Worker
 ```
 
-Swagger disponível em: `https://localhost:5001/swagger`
+Swagger disponível em: `http://localhost:5082/swagger`
 
 ### 4. Exemplo de fluxo completo (curl)
 
 ```bash
 # 1. Criar invoice (draft)
-curl -X POST https://localhost:5001/api/invoices \
+curl -X POST http://localhost:5082/api/invoices \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"customerId":"00000000-0000-0000-0000-000000000001","amount":150.00,"currency":"BRL","dueDate":"2026-04-01"}'
 
 # 2. Emitir invoice
-curl -X POST https://localhost:5001/api/invoices/{id}/issue \
+curl -X POST http://localhost:5082/api/invoices/{id}/issue \
   -H "Authorization: Bearer <token>"
 
-# 3. Simular pagamento recebido (webhook)
-curl -X POST https://localhost:5001/api/payments/webhook \
-  -H "Authorization: Bearer <token>" \
+# 3. Simular pagamento recebido (webhook — autenticado via HMAC-SHA256)
+# Gere a assinatura: echo -n '<body>' | openssl dgst -sha256 -hmac '<secret>'
+BODY='{"invoiceId":"{id}","externalPaymentId":"pix-abc123","provider":"PIX","amount":150.00}'
+SIG="sha256=$(echo -n "$BODY" | openssl dgst -sha256 -hmac 'dev-webhook-secret-32-chars!!' | awk '{print $2}')"
+curl -X POST http://localhost:5082/api/payments/webhook \
+  -H "X-Webhook-Signature: $SIG" \
   -H "Content-Type: application/json" \
-  -d '{"invoiceId":"{id}","externalPaymentId":"pix-abc123","provider":"PIX","amount":150.00}'
+  -d "$BODY"
 ```
 
 ## Testes
@@ -142,7 +145,7 @@ dotnet test tests/BillingLedger.IntegrationTests
 
 ## Deploy AWS (Milestone 3)
 
-Consulte [`infra/README.md`](infra/README.md) para instruções completas de deploy via CDK TypeScript.
+Consulte [`docs/runbook.md`](docs/runbook.md) para instruções completas de deploy, operação e troubleshooting em produção.
 
 ```bash
 cd infra
@@ -153,12 +156,11 @@ npx cdk deploy --all
 
 ## Decisões Arquiteturais
 
-Consulte [`docs/adr/`](docs/adr/) para todos os ADRs. Highlights:
-
-- **ADR-001**: PostgreSQL single instance com schemas separados por BC (vs. múltiplos bancos)
-- **ADR-002**: Outbox Pattern obrigatório para garantia de publicação de eventos
-- **ADR-003**: LocalStack em dev (sem in-memory transport) para paridade com prod
-- **ADR-004**: MassTransit como abstração de mensageria sobre SNS/SQS
+- **PostgreSQL schemas separados por BC**: um único cluster RDS, schemas `billing`, `payments`, `ledger`, `infra` — isolamento lógico sem overhead de múltiplos bancos
+- **Outbox Pattern**: eventos publicados atomicamente na mesma transação da mudança de estado; dispatcher com `SKIP LOCKED` garante exactly-once delivery
+- **MassTransit sobre SNS/SQS**: abstração que permite `InMemory` em testes e `SQS` em produção via feature flag `Messaging:Transport`
+- **HMAC-SHA256 no webhook**: provedores externos autenticam via assinatura do payload; JWT não é usado em endpoints de webhook
+- **Secrets Manager no ECS**: credenciais nunca em variáveis de ambiente em texto plano; injetadas via `secrets` no task definition
 
 ## Threat Model (resumo)
 
