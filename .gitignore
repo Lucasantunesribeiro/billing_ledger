@@ -482,3 +482,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Claude Code / AI assistant files
+CLAUDE.md
+prompt.md
+EXPLICACAO_RECRUTADOR.md
