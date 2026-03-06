@@ -1,0 +1,10 @@
+node_modules/
+dist/
+cdk.out/
+*.js
+*.d.ts
+!jest.config.js
+
+# Override root [Bb]in/ rule — keep TypeScript CDK entry point
+!bin/
+!bin/*.ts

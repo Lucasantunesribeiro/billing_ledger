@@ -2,8 +2,6 @@
 
 Backend enterprise-grade event-driven para emissão de cobranças, processamento de pagamentos e conciliação via ledger, construído em **.NET 9 / C#** com DDD, Outbox Pattern, idempotência e mensageria real na AWS.
 
-[![Build](https://github.com/your-org/billing_ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/billing_ledger/actions)
-
 ---
 
 ## Visão Geral da Arquitetura
@@ -43,25 +41,25 @@ Transição `Overdue` é disparada por job agendado no `Billing.Api`.
 
 ## Catálogo de Eventos (V1)
 
-| Evento | Publicado por | Consumido por | Tópico SNS |
-|---|---|---|---|
-| `InvoiceIssuedV1` | Billing.Api (Outbox) | Ledger.Worker | billing-invoice-events |
-| `PaymentReceivedV1` | Billing.Api (webhook) | Payments.Worker | payments-payment-events |
-| `PaymentConfirmedV1` | Payments.Worker | Billing.Api, Billing.Worker | payments-payment-events |
-| `InvoicePaidV1` | Billing.Api (Outbox) | Ledger.Worker | billing-invoice-events |
-| `InvoiceOverdueV1` | Billing.Api (job) | Ledger.Worker | billing-invoice-events |
-| `LedgerEntryCreatedV1` | Ledger.Worker | — | — |
+| Evento                 | Publicado por         | Consumido por               | Tópico SNS              |
+| ---------------------- | --------------------- | --------------------------- | ----------------------- |
+| `InvoiceIssuedV1`      | Billing.Api (Outbox)  | Ledger.Worker               | billing-invoice-events  |
+| `PaymentReceivedV1`    | Billing.Api (webhook) | Payments.Worker             | payments-payment-events |
+| `PaymentConfirmedV1`   | Payments.Worker       | Billing.Api, Billing.Worker | payments-payment-events |
+| `InvoicePaidV1`        | Billing.Api (Outbox)  | Ledger.Worker               | billing-invoice-events  |
+| `InvoiceOverdueV1`     | Billing.Api (job)     | Ledger.Worker               | billing-invoice-events  |
+| `LedgerEntryCreatedV1` | Ledger.Worker         | —                           | —                       |
 
 Todos os eventos incluem `EventId`, `CorrelationId` e `SchemaVersion = 1`.
 
 ## Schemas do Banco (PostgreSQL)
 
-| Schema | Responsável | Conteúdo |
-|---|---|---|
-| `billing` | Billing.Api | `invoices` |
-| `payments` | Payments.Worker | `payment_attempts` |
-| `ledger` | Ledger.Worker | `ledger_entries` |
-| `infra` | Todos | `outbox_messages`, `audit_logs` |
+| Schema     | Responsável     | Conteúdo                        |
+| ---------- | --------------- | ------------------------------- |
+| `billing`  | Billing.Api     | `invoices`                      |
+| `payments` | Payments.Worker | `payment_attempts`              |
+| `ledger`   | Ledger.Worker   | `ledger_entries`                |
+| `infra`    | Todos           | `outbox_messages`, `audit_logs` |
 
 ## Como Rodar Localmente
 
@@ -164,10 +162,10 @@ Consulte [`docs/adr/`](docs/adr/) para todos os ADRs. Highlights:
 
 ## Threat Model (resumo)
 
-| Ameaça | Mitigação |
-|---|---|
-| Replay de pagamento | Unique index `(provider, external_payment_id)` + idempotência no handler |
-| Double spending | Transição de estado idempotente na Invoice; estado verificado antes de aplicar |
-| Spoofing de webhook | Validação de assinatura HMAC no endpoint `/payments/webhook` |
-| Privilege escalation | JWT + RBAC via policies por endpoint; claims validados no middleware |
-| Exposição de erros | ProblemDetails sem stack trace em produção; logs estruturados internos |
+| Ameaça               | Mitigação                                                                      |
+| -------------------- | ------------------------------------------------------------------------------ |
+| Replay de pagamento  | Unique index `(provider, external_payment_id)` + idempotência no handler       |
+| Double spending      | Transição de estado idempotente na Invoice; estado verificado antes de aplicar |
+| Spoofing de webhook  | Validação de assinatura HMAC no endpoint `/payments/webhook`                   |
+| Privilege escalation | JWT + RBAC via policies por endpoint; claims validados no middleware           |
+| Exposição de erros   | ProblemDetails sem stack trace em produção; logs estruturados internos         |

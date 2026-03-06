@@ -1,0 +1,46 @@
+@baseUrl = http://localhost:5000
+# Instrução: 
+# 1. Rode o script tools\setup.ps1 no terminal.
+# 2. Copie o token impresso no terminal e cole logo abaixo no lugar de COLE_O_TOKEN_AQUI.
+@token = COLE_O_TOKEN_AQUI
+
+### Health Check (Não exige autenticação)
+GET {{baseUrl}}/health
+
+### 1. Criar Invoice (Role: Finance ou Admin)
+# @name createInvoice
+POST {{baseUrl}}/api/invoices
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "amount": 350.00,
+  "currency": "BRL",
+  "dueDate": "2027-01-01T00:00:00Z",
+  "externalReference": "INV-HTTP-001"
+}
+
+### Extrair Id para usar nas próximas requisições
+@invoiceId = {{createInvoice.response.body.id}}
+
+### 2. Emitir Invoice (Role: Finance ou Admin)
+POST {{baseUrl}}/api/invoices/{{invoiceId}}/issue
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+### 3. Buscar Invoice Especifico (Roles: Qualquer um)
+GET {{baseUrl}}/api/invoices/{{invoiceId}}
+Authorization: Bearer {{token}}
+
+### 4. Buscar / Listar Todas (Com filtro DRAFT ou ISSUED) (Roles: Qualquer um)
+GET {{baseUrl}}/api/invoices?status=Issued
+Authorization: Bearer {{token}}
+
+### 5. Enviar Webhook de Pagamento (Sem Auth, usa HMAC)
+# Como a rota webhook valida assinatura SHA256 baseada no body, o jeito mais
+# fácil via HTTP puro não é possível pois o VS Code não possui script nativo de SHA256 neste formato.
+# 
+# 👉 SOLUÇÃO: Use o script em tools\send-webhook.ps1
+# Exemplo de como rodar no terminal:
+# .\tools\send-webhook.ps1 -InvoiceId "COLE_AQUI_O_UUID"
