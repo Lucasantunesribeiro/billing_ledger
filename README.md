@@ -1,5 +1,10 @@
 # BillingLedger
 
+[![CI](https://github.com/Lucasantunesribeiro/billing_ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucasantunesribeiro/billing_ledger/actions/workflows/ci.yml)
+![.NET 9](https://img.shields.io/badge/.NET-9-512BD4)
+![Tests](https://img.shields.io/badge/tests-74%20passing-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 Backend enterprise-grade event-driven para emissão de cobranças, processamento de pagamentos e conciliação via ledger, construído em **.NET 9 / C#** com DDD, Outbox Pattern, idempotência e mensageria real na AWS.
 
 ---
@@ -132,7 +137,7 @@ curl -X POST http://localhost:5082/api/invoices/{id}/issue \
 # 3. Simular pagamento recebido (webhook — autenticado via HMAC-SHA256)
 # Gere a assinatura: echo -n '<body>' | openssl dgst -sha256 -hmac '<secret>'
 BODY='{"invoiceId":"{id}","externalPaymentId":"pix-abc123","provider":"PIX","amount":150.00}'
-SIG="sha256=$(echo -n "$BODY" | openssl dgst -sha256 -hmac 'dev-webhook-secret-32-chars!!' | awk '{print $2}')"
+SIG="sha256=$(echo -n "$BODY" | openssl dgst -sha256 -hmac 'test-secret' | awk '{print $2}')"
 curl -X POST http://localhost:5082/api/payments/webhook \
   -H "X-Webhook-Signature: $SIG" \
   -H "Content-Type: application/json" \
