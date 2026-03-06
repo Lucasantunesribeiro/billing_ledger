@@ -166,7 +166,7 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 // Production: set Messaging:Transport=SQS; credentials from ECS task role.
 var transport = builder.Configuration["Messaging:Transport"] ?? "InMemory";
 var billingApiQueue = builder.Configuration["Messaging:BillingApiQueueName"] ?? "bl-billing-api";
-var localStackUrl   = builder.Configuration["Messaging:LocalStackServiceUrl"];
+var localStackUrl = builder.Configuration["Messaging:LocalStackServiceUrl"];
 
 builder.Services.AddMassTransit(cfg =>
 {
@@ -185,7 +185,7 @@ builder.Services.AddMassTransit(cfg =>
                     h.SecretKey("test");
                     h.Config(new Amazon.SQS.AmazonSQSConfig { ServiceURL = localStackUrl });
                     h.Config(new Amazon.SimpleNotificationService.AmazonSimpleNotificationServiceConfig
-                        { ServiceURL = localStackUrl });
+                    { ServiceURL = localStackUrl });
                 });
             }
             // Production (ECS): no Host() call — AWS SDK default credential chain

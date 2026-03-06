@@ -25,8 +25,8 @@ builder.Services.AddDbContext<PaymentsDbContext>(options =>
 // ─── Messaging (MassTransit) ─────────────────────────────────────────────────
 // Local dev: Messaging:Transport=SQS + Messaging:LocalStackServiceUrl=http://localhost:4566
 // Production: Messaging:Transport=SQS; credentials from ECS task role.
-var transport     = builder.Configuration["Messaging:Transport"] ?? "InMemory";
-var queueName     = builder.Configuration["Messaging:QueueName"] ?? "bl-payments-worker";
+var transport = builder.Configuration["Messaging:Transport"] ?? "InMemory";
+var queueName = builder.Configuration["Messaging:QueueName"] ?? "bl-payments-worker";
 var localStackUrl = builder.Configuration["Messaging:LocalStackServiceUrl"];
 
 builder.Services.AddMassTransit(cfg =>
@@ -45,7 +45,7 @@ builder.Services.AddMassTransit(cfg =>
                     h.SecretKey("test");
                     h.Config(new Amazon.SQS.AmazonSQSConfig { ServiceURL = localStackUrl });
                     h.Config(new Amazon.SimpleNotificationService.AmazonSimpleNotificationServiceConfig
-                        { ServiceURL = localStackUrl });
+                    { ServiceURL = localStackUrl });
                 });
             }
 

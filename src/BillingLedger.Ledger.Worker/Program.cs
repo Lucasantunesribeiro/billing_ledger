@@ -26,10 +26,10 @@ builder.Services.AddDbContext<LedgerDbContext>(options =>
 // Local dev: Messaging:Transport=SQS + Messaging:LocalStackServiceUrl=http://localhost:4566
 //   Both consumers share one queue (ledger-worker-queue) via LocalStack fanout.
 // Production: separate queues per consumer via Messaging:InvoiceIssuedQueueName / InvoicePaidQueueName.
-var transport          = builder.Configuration["Messaging:Transport"] ?? "InMemory";
+var transport = builder.Configuration["Messaging:Transport"] ?? "InMemory";
 var invoiceIssuedQueue = builder.Configuration["Messaging:InvoiceIssuedQueueName"] ?? "bl-invoice-issued";
-var invoicePaidQueue   = builder.Configuration["Messaging:InvoicePaidQueueName"] ?? "bl-invoice-paid";
-var localStackUrl      = builder.Configuration["Messaging:LocalStackServiceUrl"];
+var invoicePaidQueue = builder.Configuration["Messaging:InvoicePaidQueueName"] ?? "bl-invoice-paid";
+var localStackUrl = builder.Configuration["Messaging:LocalStackServiceUrl"];
 
 builder.Services.AddMassTransit(cfg =>
 {
@@ -48,7 +48,7 @@ builder.Services.AddMassTransit(cfg =>
                     h.SecretKey("test");
                     h.Config(new Amazon.SQS.AmazonSQSConfig { ServiceURL = localStackUrl });
                     h.Config(new Amazon.SimpleNotificationService.AmazonSimpleNotificationServiceConfig
-                        { ServiceURL = localStackUrl });
+                    { ServiceURL = localStackUrl });
                 });
 
                 // Local dev: both consumers share one queue (LocalStack creates one ledger queue)
