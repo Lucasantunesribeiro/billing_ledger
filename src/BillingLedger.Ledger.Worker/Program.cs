@@ -23,11 +23,13 @@ builder.Services.AddDbContext<LedgerDbContext>(options =>
 });
 
 // ─── Messaging (MassTransit) ─────────────────────────────────────────────────
-// Set Messaging:Transport=SQS in production (ECS environment variable).
-// InvoiceIssuedConsumer and InvoicePaidConsumer get dedicated queues with DLQs.
-var transport = builder.Configuration["Messaging:Transport"] ?? "InMemory";
+// Local dev: Messaging:Transport=SQS + Messaging:LocalStackServiceUrl=http://localhost:4566
+//   Both consumers share one queue (ledger-worker-queue) via LocalStack fanout.
+// Production: separate queues per consumer via Messaging:InvoiceIssuedQueueName / InvoicePaidQueueName.
+var transport          = builder.Configuration["Messaging:Transport"] ?? "InMemory";
 var invoiceIssuedQueue = builder.Configuration["Messaging:InvoiceIssuedQueueName"] ?? "bl-invoice-issued";
-var invoicePaidQueue = builder.Configuration["Messaging:InvoicePaidQueueName"] ?? "bl-invoice-paid";
+var invoicePaidQueue   = builder.Configuration["Messaging:InvoicePaidQueueName"] ?? "bl-invoice-paid";
+var localStackUrl      = builder.Configuration["Messaging:LocalStackServiceUrl"];
 
 builder.Services.AddMassTransit(cfg =>
 {
@@ -38,10 +40,32 @@ builder.Services.AddMassTransit(cfg =>
     {
         cfg.UsingAmazonSqs((ctx, config) =>
         {
-            config.ReceiveEndpoint(invoiceIssuedQueue, ep =>
-                ep.ConfigureConsumer<InvoiceIssuedConsumer>(ctx));
-            config.ReceiveEndpoint(invoicePaidQueue, ep =>
-                ep.ConfigureConsumer<InvoicePaidConsumer>(ctx));
+            if (!string.IsNullOrEmpty(localStackUrl))
+            {
+                config.Host("us-east-1", h =>
+                {
+                    h.AccessKey("test");
+                    h.SecretKey("test");
+                    h.Config(new Amazon.SQS.AmazonSQSConfig { ServiceURL = localStackUrl });
+                    h.Config(new Amazon.SimpleNotificationService.AmazonSimpleNotificationServiceConfig
+                        { ServiceURL = localStackUrl });
+                });
+
+                // Local dev: both consumers share one queue (LocalStack creates one ledger queue)
+                config.ReceiveEndpoint(invoiceIssuedQueue, ep =>
+                {
+                    ep.ConfigureConsumer<InvoiceIssuedConsumer>(ctx);
+                    ep.ConfigureConsumer<InvoicePaidConsumer>(ctx);
+                });
+            }
+            else
+            {
+                // Production: dedicated queue per consumer
+                config.ReceiveEndpoint(invoiceIssuedQueue, ep =>
+                    ep.ConfigureConsumer<InvoiceIssuedConsumer>(ctx));
+                config.ReceiveEndpoint(invoicePaidQueue, ep =>
+                    ep.ConfigureConsumer<InvoicePaidConsumer>(ctx));
+            }
         });
     }
     else

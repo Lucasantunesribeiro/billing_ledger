@@ -103,10 +103,14 @@ builder.Services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<BillingDbCon
 builder.Services.AddScoped<IAuditService, AuditService>();
 
 // ─── Messaging (MassTransit) ─────────────────────────────────────────────────
-// Set Messaging:Transport=SQS in production (ECS environment variable).
-// Tests and local dev use InMemory (default).
+// Transport:
+//   - "SQS"      → Amazon SQS/SNS (production ECS, or local dev via LocalStack)
+//   - anything   → InMemory (integration tests only — requires MT license at runtime)
+// Local dev: set Messaging:Transport=SQS + Messaging:LocalStackServiceUrl=http://localhost:4566
+// Production: set Messaging:Transport=SQS; credentials from ECS task role.
 var transport = builder.Configuration["Messaging:Transport"] ?? "InMemory";
 var billingApiQueue = builder.Configuration["Messaging:BillingApiQueueName"] ?? "bl-billing-api";
+var localStackUrl   = builder.Configuration["Messaging:LocalStackServiceUrl"];
 
 builder.Services.AddMassTransit(cfg =>
 {
@@ -114,14 +118,23 @@ builder.Services.AddMassTransit(cfg =>
 
     if (transport == "SQS")
     {
-        // AWS region + credentials are resolved from environment:
-        //   AWS_DEFAULT_REGION env var (set by ECS) + ECS task role (IAM).
-        // ConfigurationHostSettings accepts AmazonSQSConfig + AmazonSNSConfig if
-        // explicit credentials are needed (e.g. local dev with named profile).
-        // AWS credentials + region resolved from ECS task role + AWS_DEFAULT_REGION env var.
-        // No explicit Host() call needed in MassTransit 9.x — the SDK default chain handles it.
         cfg.UsingAmazonSqs((ctx, config) =>
         {
+            if (!string.IsNullOrEmpty(localStackUrl))
+            {
+                // LocalStack: explicit credentials + service URL override
+                config.Host("us-east-1", h =>
+                {
+                    h.AccessKey("test");
+                    h.SecretKey("test");
+                    h.Config(new Amazon.SQS.AmazonSQSConfig { ServiceURL = localStackUrl });
+                    h.Config(new Amazon.SimpleNotificationService.AmazonSimpleNotificationServiceConfig
+                        { ServiceURL = localStackUrl });
+                });
+            }
+            // Production (ECS): no Host() call — AWS SDK default credential chain
+            // resolves region (AWS_DEFAULT_REGION) + credentials (task role IAM).
+
             config.ReceiveEndpoint(billingApiQueue, ep =>
                 ep.ConfigureConsumer<PaymentConfirmedConsumer>(ctx));
         });

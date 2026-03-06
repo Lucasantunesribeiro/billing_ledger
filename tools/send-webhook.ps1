@@ -4,7 +4,7 @@ param(
     [string]$ExternalPaymentId = $([guid]::NewGuid().ToString().Substring(0,8)),
     [decimal]$Amount = 350.00,
     [string]$Secret = "test-secret",
-    [string]$BaseUrl = "http://localhost:5000"
+    [string]$BaseUrl = "http://localhost:5082"
 )
 
 $body = @"

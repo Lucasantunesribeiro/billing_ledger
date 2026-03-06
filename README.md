@@ -68,7 +68,19 @@ Todos os eventos incluem `EventId`, `CorrelationId` e `SchemaVersion = 1`.
 - .NET 9 SDK
 - `awslocal` (pip install awscli-local) — para interagir com LocalStack
 
-### 1. Subir a infraestrutura
+> **Nota:** O Postgres do Docker usa a porta **5433** no host para evitar conflito com instalações locais de Postgres na porta padrão 5432.
+
+### Atalho: setup automático (Windows/PowerShell)
+
+```powershell
+.\tools\setup.ps1
+```
+
+Esse script sobe os containers, aplica todas as migrations e imprime os tokens JWT para teste.
+
+### Setup manual
+
+#### 1. Subir a infraestrutura
 
 ```bash
 docker compose up -d
@@ -76,7 +88,7 @@ docker compose up -d
 
 Aguarde todos os healthchecks ficarem `healthy` (especialmente LocalStack ~30s).
 
-### 2. Aplicar migrações EF Core
+#### 2. Aplicar migrações EF Core
 
 ```bash
 # Billing context

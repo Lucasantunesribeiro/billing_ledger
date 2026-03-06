@@ -16,7 +16,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <!-- Messaging -->
-    <PackageReference Include="MassTransit.AmazonSQS" Version="9.0.1" />
+    <PackageReference Include="MassTransit.AmazonSQS" Version="8.3.6" />
     <!-- Validation -->
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
     <!-- Logging -->

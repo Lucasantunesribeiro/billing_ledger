@@ -72,14 +72,15 @@ Overdue transitions are triggered by a scheduled background job/worker.
 
 ## Common Commands
 
-> Commands below assume the project is initialized. Adjust paths as needed.
-
 ```bash
-# Restore dependencies
-dotnet restore
+# Start local infrastructure (Postgres, Redis, LocalStack)
+docker compose up -d
 
-# Build entire solution
-dotnet build
+# Restore + build
+dotnet restore && dotnet build
+
+# Run the API locally
+dotnet run --project src/BillingLedger.Billing.Api
 
 # Run all tests
 dotnet test
@@ -90,21 +91,29 @@ dotnet test tests/BillingLedger.Billing.UnitTests
 # Run a specific test by name
 dotnet test --filter "FullyQualifiedName~Invoice_ShouldTransitionToPaid"
 
-# Apply EF Core migrations
-dotnet ef database update --project src/BillingLedger.Billing.Api
-
-# Add a new EF Core migration
-dotnet ef migrations add <MigrationName> --project src/BillingLedger.Billing.Api
-
 # Format / lint
 dotnet format
 
-# Start local infrastructure
-docker compose up -d
+# Apply EF Core migrations (must run for all three bounded contexts)
+dotnet ef database update --project src/BillingLedger.Billing.Api
+dotnet ef database update --project src/BillingLedger.Payments.Worker
+dotnet ef database update --project src/BillingLedger.Ledger.Worker
 
-# Stop local infrastructure
-docker compose down
+# Add a new EF Core migration (specify which project owns the DbContext)
+dotnet ef migrations add <MigrationName> --project src/BillingLedger.Billing.Api
 ```
+
+## Developer Tools (`tools/`)
+
+| File | Purpose |
+|---|---|
+| `setup.ps1` | One-shot local setup: Docker up → EF migrations → generate JWT tokens |
+| `gen-token.csx` | Generate a dev JWT: `dotnet script tools/gen-token.csx <userId> <role>` (roles: `Finance`, `Admin`, `ReadOnly`, `Support`) |
+| `api-requests.http` | REST Client (VS Code) HTTP scratch file for all endpoints |
+| `send-webhook.ps1` | Simulate a payment webhook with HMAC-SHA256 signature |
+| `billing_ledger.postman_collection.json` | Postman collection covering the full API surface |
+
+Dev JWT signing key: `dev-signing-key-must-be-32-chars!!`, issuer `billing-ledger-dev`, audience `billing-ledger-api-dev`.
 
 ## API Endpoints (Billing.Api)
 
@@ -148,12 +157,6 @@ All events include `EventId`, `CorrelationId`, and `SchemaVersion = 1`.
 - ECS Fargate: `Billing.Api` (behind ALB), `Payments.Worker`, `Ledger.Worker`
 - CloudWatch Logs + alarms (5xx rate, DLQ depth)
 
-## Milestones
-
-1. **MVP**: Invoice CRUD + issue (Outbox) + webhook simulation + full SAGA (workers)
-2. **Enterprise**: Idempotency + DLQ/retries + RBAC + audit + OTel/correlationId
-3. **AWS**: CDK deploy + ECS/RDS/SQS/SNS/Redis + runbook
-
 ## MCP Usage Map
 
 | Purpose | Preferred tools |
@@ -179,6 +182,16 @@ All events include `EventId`, `CorrelationId`, and `SchemaVersion = 1`.
 | `sre-observability` | OTel setup, correlationId propagation, logging structure |
 | `qa-engineer` | Unit/integration/contract tests (Testcontainers + LocalStack) |
 | `code-quality-reviewer` | Final review, conventions, production readiness |
+
+## Git Workflow (obrigatório)
+
+Após **qualquer** conjunto de mudanças funcionais (bug fix, feature, config, docs):
+1. `dotnet build` — zero erros
+2. `git add` nos arquivos modificados
+3. `git commit -m "tipo(escopo): descrição concisa"`
+4. `git push origin main`
+
+Não acumule mudanças: commit + push ao final de cada tarefa ou bloco lógico de alterações.
 
 ## Definition of Done (every PR)
 

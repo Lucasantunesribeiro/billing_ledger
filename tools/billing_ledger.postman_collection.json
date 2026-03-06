@@ -1,0 +1,367 @@
+{
+  "info": {
+    "name": "Billing Ledger API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Criar Invoice (Finance)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.test('Body tem id e status Draft', () => {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('id');",
+              "    pm.expect(json.status).to.eql('Draft');",
+              "    pm.collectionVariables.set('invoiceId', json.id);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"amount\": 350.00,\n  \"currency\": \"BRL\",\n  \"dueDate\": \"2027-01-01T00:00:00Z\",\n  \"externalReference\": \"INV-POSTMAN-001\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices"]
+        }
+      }
+    },
+    {
+      "name": "Criar Invoice (ReadOnly → 403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 para role insuficiente', () => pm.response.to.have.status(403));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{tokenReadOnly}}", "type": "string" }]
+        },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"amount\": 100.00,\n  \"currency\": \"BRL\",\n  \"dueDate\": \"2027-01-01T00:00:00Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices"]
+        }
+      }
+    },
+    {
+      "name": "Criar Invoice (Sem token → 401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 401 sem autenticação', () => pm.response.to.have.status(401));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"amount\": 100.00,\n  \"currency\": \"BRL\",\n  \"dueDate\": \"2027-01-01T00:00:00Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices"]
+        }
+      }
+    },
+    {
+      "name": "Emitir Invoice (Draft → Issued)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Status agora é Issued', () => {",
+              "    pm.expect(pm.response.json().status).to.eql('Issued');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/issue",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices", "{{invoiceId}}", "issue"]
+        }
+      }
+    },
+    {
+      "name": "Buscar Invoice por ID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('ID confere', () => {",
+              "    pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('invoiceId'));",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices", "{{invoiceId}}"]
+        }
+      }
+    },
+    {
+      "name": "Buscar Invoice inexistente → 404",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 para ID inexistente', () => pm.response.to.have.status(404));",
+              "pm.test('Resposta é ProblemDetails', () => {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('title');",
+              "    pm.expect(json).to.have.property('status');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    },
+    {
+      "name": "Listar Invoices (status=Issued)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Retorna array', () => {",
+              "    pm.expect(pm.response.json()).to.be.an('array');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices?status=Issued",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices"],
+          "query": [{ "key": "status", "value": "Issued" }]
+        }
+      }
+    },
+    {
+      "name": "Webhook Pagamento (HMAC auto-assinado)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const secret = 'test-secret';",
+              "const invoiceId = pm.collectionVariables.get('invoiceId');",
+              "const extId = 'pix-' + pm.variables.replaceIn('{{$guid}}').split('-')[0];",
+              "",
+              "const bodyObj = {",
+              "    invoiceId: invoiceId,",
+              "    externalPaymentId: extId,",
+              "    provider: 'PIX',",
+              "    amount: 350.0",
+              "};",
+              "const bodyStr = JSON.stringify(bodyObj);",
+              "pm.collectionVariables.set('_webhookBody', bodyStr);",
+              "",
+              "const hash = CryptoJS.HmacSHA256(bodyStr, secret);",
+              "const sig = 'sha256=' + hash.toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.add({ key: 'X-Webhook-Signature', value: sig });",
+              "pm.request.body.raw = bodyStr;"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 — webhook aceito', () => pm.response.to.have.status(200));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/payments/webhook",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "payments", "webhook"]
+        }
+      }
+    },
+    {
+      "name": "Webhook Pagamento (assinatura inválida → 403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 para assinatura inválida', () => pm.response.to.have.status(403));",
+              "pm.test('Resposta é ProblemDetails', () => {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('title');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Webhook-Signature", "value": "sha256=invalido" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"invoiceId\":\"{{invoiceId}}\",\"externalPaymentId\":\"pix-fake\",\"provider\":\"PIX\",\"amount\":350.0}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/payments/webhook",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "payments", "webhook"]
+        }
+      }
+    },
+    {
+      "name": "Cancelar Invoice",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Status agora é Cancelled', () => {",
+              "    pm.expect(pm.response.json().status).to.eql('Cancelled');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/invoices/{{invoiceId}}/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "invoices", "{{invoiceId}}", "cancel"]
+        }
+      }
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": { "type": "text/javascript", "exec": [""] }
+    },
+    {
+      "listen": "test",
+      "script": { "type": "text/javascript", "exec": [""] }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5082", "type": "string" },
+    { "key": "token", "value": "COLE_SEU_TOKEN_FINANCE_AQUI", "type": "string" },
+    { "key": "tokenReadOnly", "value": "COLE_SEU_TOKEN_READONLY_AQUI", "type": "string" },
+    { "key": "invoiceId", "value": "", "type": "string" }
+  ]
+}

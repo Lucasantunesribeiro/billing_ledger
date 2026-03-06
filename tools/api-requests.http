@@ -1,4 +1,4 @@
-@baseUrl = http://localhost:5000
+@baseUrl = http://localhost:5082
 # Instrução: 
 # 1. Rode o script tools\setup.ps1 no terminal.
 # 2. Copie o token impresso no terminal e cole logo abaixo no lugar de COLE_O_TOKEN_AQUI.

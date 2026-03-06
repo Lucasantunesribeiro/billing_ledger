@@ -15,7 +15,7 @@ internal sealed class BillingDbContextFactory : IDesignTimeDbContextFactory<Bill
     {
         var optionsBuilder = new DbContextOptionsBuilder<BillingDbContext>();
         optionsBuilder.UseNpgsql(
-            "Host=localhost;Port=5432;Database=billing_ledger;Username=billing_user;Password=billing_pass",
+            "Host=localhost;Port=5433;Database=billing_ledger;Username=billing_user;Password=billing_pass",
             npgsql => npgsql.MigrationsHistoryTable("__ef_migrations", "billing"));
 
         return new BillingDbContext(optionsBuilder.Options, new DomainEventToOutboxInterceptor());
