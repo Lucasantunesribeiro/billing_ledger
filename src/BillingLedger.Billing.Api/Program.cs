@@ -9,6 +9,7 @@ using BillingLedger.Billing.Api.Infrastructure.Observability;
 using BillingLedger.Billing.Api.Infrastructure.Persistence;
 using BillingLedger.Billing.Api.Infrastructure.Persistence.Interceptors;
 using BillingLedger.Billing.Api.Infrastructure.Persistence.Repositories;
+using BillingLedger.Billing.Api.Infrastructure.Resilience;
 using BillingLedger.BuildingBlocks.Messaging;
 using BillingLedger.BuildingBlocks.Observability;
 using FluentValidation;
@@ -32,6 +33,7 @@ builder.Host.UseSerilog((ctx, lc) => lc
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
+builder.Services.AddBillingIntegrationResilience(builder.Configuration);
 
 // ─── FluentValidation ─────────────────────────────────────────────────────────
 builder.Services.AddFluentValidationAutoValidation();
@@ -230,8 +232,13 @@ builder.Services.AddMassTransit(cfg =>
     }
 });
 
-// IEventBus wraps MassTransit's IPublishEndpoint (in tests: replaced by FakeEventBus)
-builder.Services.AddScoped<IEventBus, MassTransitEventBus>();
+// IEventBus wraps MassTransit's IPublishEndpoint with retry/circuit-breaker protection.
+builder.Services.AddScoped<MassTransitEventBus>();
+builder.Services.AddScoped<IEventBus>(sp =>
+    new ResilientEventBus(
+        sp.GetRequiredService<MassTransitEventBus>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EventBusResilienceOptions>>(),
+        sp.GetRequiredService<ILogger<ResilientEventBus>>()));
 
 // ─── Outbox Dispatcher ────────────────────────────────────────────────────────
 builder.Services.AddSingleton<OutboxDispatcherService>();
