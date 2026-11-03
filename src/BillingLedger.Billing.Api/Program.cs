@@ -277,6 +277,14 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing")
     });
 }
 
+// Opcional (demo/ambiente efemero): aplica as migrations do schema billing na subida.
+// Desligado por padrao; em producao as migrations sao um passo explicito do deploy.
+if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    await using var migrationScope = app.Services.CreateAsyncScope();
+    await migrationScope.ServiceProvider.GetRequiredService<BillingDbContext>().Database.MigrateAsync();
+}
+
 app.MapHealthChecks("/health");
 app.UseMiddleware<CorrelationIdMiddleware>();
 if (!app.Environment.IsDevelopment())

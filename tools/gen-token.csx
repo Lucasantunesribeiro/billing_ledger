@@ -10,7 +10,13 @@ using Microsoft.IdentityModel.Tokens;
 var userId = Args.Count > 0 ? Args[0] : "dev-user-001";
 var role   = Args.Count > 1 ? Args[1] : "Finance";
 
-var key   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("dev-signing-key-must-be-32-chars!!"));
+// Defaults = appsettings.Development.json. Para a demo publica, exporte JWT_SIGNING_KEY,
+// JWT_ISSUER e JWT_AUDIENCE com os mesmos valores configurados no servico.
+var signingKey = Environment.GetEnvironmentVariable("JWT_SIGNING_KEY") ?? "dev-signing-key-must-be-32-chars!!";
+var issuer     = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? "billing-ledger-dev";
+var audience   = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? "billing-ledger-api-dev";
+
+var key   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
 var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
 var claims = new List<Claim>
@@ -21,8 +27,8 @@ var claims = new List<Claim>
 };
 
 var token = new JwtSecurityToken(
-    issuer:            "billing-ledger-dev",
-    audience:          "billing-ledger-api-dev",
+    issuer:            issuer,
+    audience:          audience,
     claims:            claims,
     expires:           DateTime.UtcNow.AddDays(30), // Válido por 30 dias para facilitar
     signingCredentials: creds);
