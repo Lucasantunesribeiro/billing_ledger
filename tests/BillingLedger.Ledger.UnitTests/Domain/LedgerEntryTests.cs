@@ -60,4 +60,83 @@ public class LedgerEntryTests
 
         (debit.Amount - credit.Amount).Should().Be(0m);
     }
+
+    // ─── Guardas de valor/moeda ──────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-0.01")]
+    [InlineData("-100")]
+    public void Create_WithNonPositiveAmount_ShouldThrow(string raw)
+    {
+        var amount = decimal.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
+
+        var act = () => LedgerEntry.Create(Guid.NewGuid(), LedgerEntryType.Debit, amount, "BRL", Guid.NewGuid(), Guid.NewGuid());
+
+        act.Should().Throw<ArgumentOutOfRangeException>("o sinal vem do Type; Amount e sempre positivo");
+    }
+
+    [Fact]
+    public void Create_WithMoreThanTwoDecimals_ShouldThrowInsteadOfLettingPostgresRound()
+    {
+        var act = () => LedgerEntry.Create(Guid.NewGuid(), LedgerEntryType.Debit, 10.005m, "BRL", Guid.NewGuid(), Guid.NewGuid());
+
+        act.Should().Throw<ArgumentException>().WithMessage("*decimal places*");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("R$")]
+    [InlineData("REAL")]
+    public void Create_WithInvalidCurrency_ShouldThrow(string currency)
+    {
+        var act = () => LedgerEntry.Create(Guid.NewGuid(), LedgerEntryType.Debit, 1m, currency, Guid.NewGuid(), Guid.NewGuid());
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Create_ShouldNormalizeCurrencyToUpperCase()
+    {
+        LedgerEntry.Create(Guid.NewGuid(), LedgerEntryType.Debit, 1m, "brl", Guid.NewGuid(), Guid.NewGuid())
+            .Currency.Should().Be("BRL");
+    }
+
+    [Fact]
+    public void Create_WithEmptyEventId_ShouldThrow()
+    {
+        var act = () => LedgerEntry.Create(Guid.NewGuid(), LedgerEntryType.Debit, 1m, "BRL", Guid.Empty, Guid.NewGuid());
+
+        act.Should().Throw<ArgumentException>().WithMessage("*EventId*");
+    }
+
+    // ─── Saldo ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Balance_OfManyEntries_ShouldBeExact()
+    {
+        var invoiceId = Guid.NewGuid();
+        // 10.000 debitos de 0,01 + 1 credito de 100,00 → saldo exatamente zero.
+        var entries = Enumerable.Range(0, 10_000)
+            .Select(_ => LedgerEntry.Create(invoiceId, LedgerEntryType.Debit, 0.01m, "BRL", Guid.NewGuid(), Guid.NewGuid()))
+            .Append(LedgerEntry.Create(invoiceId, LedgerEntryType.Credit, 100.00m, "BRL", Guid.NewGuid(), Guid.NewGuid()))
+            .ToList();
+
+        LedgerEntry.Balance(entries).Should().Be(0m);
+        LedgerEntry.Balance(entries.Take(10_000)).Should().Be(-100.00m);
+    }
+
+    [Fact]
+    public void Balance_WithMixedCurrencies_ShouldThrow()
+    {
+        var entries = new[]
+        {
+            LedgerEntry.Create(Guid.NewGuid(), LedgerEntryType.Debit, 1m, "BRL", Guid.NewGuid(), Guid.NewGuid()),
+            LedgerEntry.Create(Guid.NewGuid(), LedgerEntryType.Credit, 1m, "USD", Guid.NewGuid(), Guid.NewGuid())
+        };
+
+        var act = () => LedgerEntry.Balance(entries);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
 }
