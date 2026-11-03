@@ -3,16 +3,16 @@ services:
     image: postgres:16-alpine
     container_name: billing_postgres
     environment:
-      POSTGRES_USER: billing_user
-      POSTGRES_PASSWORD: billing_pass
-      POSTGRES_DB: billing_ledger
+      POSTGRES_USER: ${POSTGRES_USER:-billing_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-billing_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-billing_ledger}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U billing_user -d billing_ledger"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
