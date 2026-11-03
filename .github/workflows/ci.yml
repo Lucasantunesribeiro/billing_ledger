@@ -7,19 +7,17 @@ on:
     branches: [main, develop]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    permissions:
-      checks: write
-      contents: read
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -28,31 +26,60 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-          cache: true
-          cache-dependency-path: '**/*.csproj'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore BillingLedger.sln
 
       - name: Format check
-        run: dotnet format --verify-no-changes
+        run: dotnet format BillingLedger.sln --verify-no-changes --no-restore
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build BillingLedger.sln --no-restore --configuration Release
 
+      # Ledger.UnitTests e IntegrationTests usam Testcontainers (PostgreSQL); o runner
+      # ubuntu-latest ja tem Docker.
       - name: Unit Tests
         run: |
-          dotnet test tests/BillingLedger.Billing.UnitTests --no-build --configuration Release --logger trx
-          dotnet test tests/BillingLedger.Payments.UnitTests --no-build --configuration Release --logger trx
-          dotnet test tests/BillingLedger.Ledger.UnitTests   --no-build --configuration Release --logger trx
+          dotnet test tests/BillingLedger.Billing.UnitTests  --no-build --configuration Release --logger trx --results-directory TestResults
+          dotnet test tests/BillingLedger.Payments.UnitTests --no-build --configuration Release --logger trx --results-directory TestResults
+          dotnet test tests/BillingLedger.Ledger.UnitTests   --no-build --configuration Release --logger trx --results-directory TestResults
 
       - name: Integration Tests
-        run: dotnet test tests/BillingLedger.IntegrationTests --no-build --configuration Release --logger trx
+        run: dotnet test tests/BillingLedger.IntegrationTests --no-build --configuration Release --logger trx --results-directory TestResults
 
-      - name: Publish Test Results
-        uses: dorny/test-reporter@v1
+      - name: Upload test results
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: Test Results
-          path: "**/*.trx"
-          reporter: dotnet-trx
+          name: test-results
+          path: TestResults/*.trx
+          retention-days: 7
+
+  docker-build:
+    name: Docker build (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: BillingLedger.Billing.Api
+            image: billing-api
+          - service: BillingLedger.Payments.Worker
+            image: payments-worker
+          - service: BillingLedger.Ledger.Worker
+            image: ledger-worker
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Apenas valida que a imagem compila; nada e publicado.
+      - name: Build image
+        run: docker build -f src/${{ matrix.service }}/Dockerfile -t ci/${{ matrix.image }}:${{ github.sha }} .
