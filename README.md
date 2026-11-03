@@ -4,59 +4,71 @@
 ![.NET 9](https://img.shields.io/badge/.NET-9-512BD4)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-Backend enterprise-grade event-driven para emissao de cobrancas, processamento de pagamentos e conciliacao via ledger, construido em **.NET 9 / C#** com DDD, Outbox Pattern, idempotencia, mensageria real na AWS e resiliencia para falhas transientes no `Billing.Api`.
+Backend orientado a eventos para emissao de cobrancas (faturas), processamento de pagamentos e registro em ledger, em **.NET 9 / C#** com DDD, Outbox Pattern, idempotencia por `EventId` e mensageria via MassTransit (SNS/SQS na AWS ou LocalStack; `InMemory` nos testes).
 
 ## Visao Geral da Arquitetura
 
 ```mermaid
 graph TD
-    Client -->|HTTPS| API[Billing.Api]
-    API -->|Outbox tx| PG[(PostgreSQL)]
-    API -->|Dispatch| SNS[SNS: billing-invoice-events]
+    Client -->|HTTP + JWT| API[Billing.Api]
+    EXT[Provedor de pagamento] -->|POST /api/payments/webhook HMAC| API
+    API -->|fatura + outbox na mesma transacao| PG[(PostgreSQL)]
+    API -->|OutboxDispatcher: InvoiceIssuedV1 / InvoicePaidV1| SNS_INV[SNS: billing-invoice-events]
+    API -->|PaymentReceivedV1 direto| SNS_PAY[SNS: payments-payment-events]
 
-    SNS -->|fanout| SQS_BW[SQS: billing-worker-queue]
-    SNS -->|fanout| SQS_LW[SQS: ledger-worker-queue]
+    SNS_PAY --> SQS_PW[SQS: payments-worker-queue]
+    SQS_PW --> PW[Payments.Worker]
+    PW -->|payment_attempts| PG
+    PW -->|PaymentConfirmedV1 com Amount/Currency| SNS_PAY
+    SNS_PAY --> SQS_BW[SQS: billing-worker-queue]
+    SQS_BW -->|PaymentConfirmedConsumer| API
 
-    EXT[Payment Provider Webhook] -->|POST /payments/webhook| API
-    API -->|Publish| SNS_PAY[SNS: payments-payment-events]
-    SNS_PAY -->|fanout| SQS_PW[SQS: payments-worker-queue]
-    SNS_PAY -->|fanout| SQS_BW
+    SNS_INV --> SQS_LW[SQS: ledger-worker-queue]
+    SQS_LW --> LW[Ledger.Worker]
+    LW -->|ledger_entries, unico por event_id| PG
 
-    PW[Payments.Worker] -->|Consumes| SQS_PW
-    PW -->|PaymentConfirmed| SNS_PAY
-
-    LW[Ledger.Worker] -->|Consumes| SQS_LW
-    LW -->|LedgerEntry| PG
-
-    SQS_PW -->|fail x3| DLQ_PW[DLQ: payments]
-    SQS_LW -->|fail x3| DLQ_LW[DLQ: ledger]
-    SQS_BW -->|fail x3| DLQ_BW[DLQ: billing]
+    SQS_PW -->|falha x3| DLQ_PW[DLQ: payments]
+    SQS_LW -->|falha x3| DLQ_LW[DLQ: ledger]
+    SQS_BW -->|falha x3| DLQ_BW[DLQ: billing]
 ```
+
+Topicos, filas e DLQs locais sao criados por `scripts/localstack-setup.sh`.
 
 ## Saga de Pagamento
 
 ```text
-InvoiceIssued -> PaymentReceived -> PaymentConfirmed -> InvoicePaid -> LedgerEntryCreated
+InvoiceIssued -> PaymentReceived -> PaymentConfirmed -> (valor e moeda conferem?) -> InvoicePaid -> Ledger CREDIT
 ```
 
-Transicao `Overdue` e disparada por job agendado no `Billing.Api`.
+- `InvoiceIssuedV1` gera um lancamento `Debit` no ledger; `InvoicePaidV1` gera um `Credit`.
+- O Billing so marca a fatura como paga se o `Amount`/`Currency` do `PaymentConfirmedV1` baterem exatamente com a fatura. Pagamento parcial, excedente ou em outra moeda e registrado em `payments.payment_attempts`, a fatura continua `Issued` e um aviso e logado (conciliacao manual).
+- O dominio tem a transicao `Issued -> Overdue` (`Invoice.MarkAsOverdue`), mas **nao ha job nem endpoint que a dispare** hoje.
 
 ## Catalogo de Eventos (V1)
 
-| Evento                 | Publicado por         | Consumido por               | Topico SNS              |
-| ---------------------- | --------------------- | --------------------------- | ----------------------- |
-| `InvoiceIssuedV1`      | Billing.Api (Outbox)  | Ledger.Worker               | billing-invoice-events  |
-| `PaymentReceivedV1`    | Billing.Api (webhook) | Payments.Worker             | payments-payment-events |
-| `PaymentConfirmedV1`   | Payments.Worker       | Billing.Api, Billing.Worker | payments-payment-events |
-| `InvoicePaidV1`        | Billing.Api (Outbox)  | Ledger.Worker               | billing-invoice-events  |
-| `InvoiceOverdueV1`     | Billing.Api (job)     | Ledger.Worker               | billing-invoice-events  |
-| `LedgerEntryCreatedV1` | Ledger.Worker         | -                           | -                       |
+| Evento                 | Publicado por                | Consumido por                     |
+| ---------------------- | ---------------------------- | --------------------------------- |
+| `InvoiceIssuedV1`      | Billing.Api (Outbox)         | Ledger.Worker                     |
+| `PaymentReceivedV1`    | Billing.Api (webhook)        | Payments.Worker                   |
+| `PaymentConfirmedV1`   | Payments.Worker              | Billing.Api (`PaymentConfirmedConsumer`) |
+| `InvoicePaidV1`        | Billing.Api (Outbox)         | Ledger.Worker                     |
+| `InvoiceOverdueV1`     | Billing.Api (Outbox), sem gatilho hoje | -                       |
+| `LedgerEntryCreatedV1` | contrato definido, sem produtor | -                              |
 
-Todos os eventos incluem `EventId`, `CorrelationId` e `SchemaVersion = 1`.
+Todos os eventos incluem `EventId`, `CorrelationId` e `SchemaVersion = 1`. `Currency` em `PaymentReceivedV1`/`PaymentConfirmedV1`/`LedgerEntryCreatedV1` e `Amount` em `PaymentConfirmedV1` sao campos opcionais adicionados de forma compativel ao V1.
+
+## Dinheiro (ADR 0004)
+
+- Todo valor monetario e `decimal` (nunca `double`/`float`), com moeda ISO 4217 explicita; ha teste que falha se surgir propriedade de ponto flutuante nos contratos/dominio.
+- Colunas `numeric(18,2)` em `invoices`, `payment_attempts` e `ledger_entries` (teste verifica o mapeamento EF e que o modelo nao diverge das migrations).
+- **Sem arredondamento implicito**: API, `Money.Of`, `PaymentAttempt` e `LedgerEntry` rejeitam valores com mais de 2 casas (`10.005` -> HTTP 400) e valores `<= 0`.
+- Arredondamento so explicito via `Money.Round` (padrao `MidpointRounding.ToEven`, bancario).
+- `Money.Allocate` rateia sem perder nem criar centavos (`100,00 / 3 = 33,34 + 33,33 + 33,33`).
+- Contratos serializam `decimal` sem perda tanto no Outbox (`System.Text.Json`, numero) quanto no MassTransit (string JSON); coberto por testes de round-trip.
 
 ## Resiliencia de Integracoes
 
-O `BillingLedger.Billing.Api` agora aplica resiliencia em dois pontos de saida:
+O `BillingLedger.Billing.Api` aplica resiliencia em dois pontos de saida:
 
 - **Event bus outbound**: publicacoes feitas pelo `IEventBus` passam por retry exponencial com jitter, timeout por tentativa e circuit breaker antes de chegar ao transporte MassTransit/SNS/SQS.
 - **HTTP outbound**: o projeto registra um `HttpClient` nomeado com `Microsoft.Extensions.Http.Resilience`, pronto para webhooks de saida e integracoes REST entre servicos ou workers quando esse fluxo for introduzido.
@@ -126,7 +138,8 @@ Esse script sobe os containers, aplica todas as migrations e imprime os tokens J
 #### 1. Subir a infraestrutura
 
 ```bash
-docker compose up -d
+cp .env.example .env   # opcional: os defaults do compose ja servem para desenvolvimento
+docker compose up -d   # postgres (porta 5433), redis e localstack (SNS/SQS)
 ```
 
 Aguarde todos os healthchecks ficarem `healthy`, principalmente o LocalStack.
@@ -157,7 +170,15 @@ dotnet run --project src/BillingLedger.Payments.Worker
 dotnet run --project src/BillingLedger.Ledger.Worker
 ```
 
-Swagger disponivel em `http://localhost:5082/swagger`.
+Swagger disponivel em `http://localhost:5082/swagger` (apenas em `Development`).
+
+#### 3b. Alternativa: servicos .NET em containers
+
+```bash
+docker compose --profile app up -d --build
+```
+
+O profile `app` constroi `billing-api` (porta 5082), `payments-worker` e `ledger-worker` a partir dos Dockerfiles em `src/*/Dockerfile`, apontando para o Postgres e o LocalStack do proprio compose. As migrations **nao** sao aplicadas na subida: rode o passo 2 antes.
 
 #### 4. Exemplo de fluxo completo
 
@@ -183,9 +204,11 @@ curl -X POST http://localhost:5082/api/payments/webhook \
 
 ## Testes
 
+Os projetos `BillingLedger.Ledger.UnitTests`, `BillingLedger.Payments.UnitTests` e `BillingLedger.IntegrationTests` sobem PostgreSQL via Testcontainers e precisam de Docker.
+
 ```bash
 # Todos os testes
-dotnet test
+dotnet test BillingLedger.sln
 
 # Apenas unitarios
 dotnet test tests/BillingLedger.Billing.UnitTests
@@ -195,6 +218,19 @@ dotnet test --filter "FullyQualifiedName~Invoice_ShouldTransitionToPaid"
 
 # Integracao (requer Docker)
 dotnet test tests/BillingLedger.IntegrationTests
+```
+
+Testes focados em dinheiro e idempotencia:
+
+```bash
+# Escala, arredondamento, soma de muitas entradas e rateio com centavo residual
+dotnet test tests/BillingLedger.Billing.UnitTests --filter "FullyQualifiedName~MoneyArithmeticTests"
+# Round-trip decimal dos contratos (Outbox e MassTransit)
+dotnet test tests/BillingLedger.Billing.UnitTests --filter "FullyQualifiedName~ContractDecimalSerializationTests"
+# Reentrega do mesmo EventId nao duplica lancamento (PostgreSQL real)
+dotnet test tests/BillingLedger.Ledger.UnitTests --filter "FullyQualifiedName~LedgerConsumerIdempotencyTests"
+# Dois dispatchers do Outbox em paralelo publicam cada mensagem uma unica vez
+dotnet test tests/BillingLedger.IntegrationTests --filter "FullyQualifiedName~OutboxConcurrentDispatchTests"
 ```
 
 Teste unitario focado na resiliencia do barramento:
@@ -224,6 +260,11 @@ Veja [`.env.example`](.env.example). Todas podem ser definidas como variaveis de
 | `ConnectionStrings__Postgres` | Conexao com o PostgreSQL (API e workers)             |
 | `Jwt__SigningKey`           | Chave de assinatura dos tokens JWT (minimo 32 caracteres) |
 | `Payments__WebhookSecret`   | Segredo HMAC-SHA256 do webhook de pagamentos           |
+| `Database__User` / `Database__Password` | Opcional: credenciais anexadas a `ConnectionStrings__Postgres` (uso no ECS) |
+| `Messaging__Transport`      | `SQS` para SNS/SQS; qualquer outro valor usa `InMemory` |
+| `Messaging__LocalStackServiceUrl` | URL do LocalStack (ex.: `http://localhost:4566`); vazio = AWS real |
+| `JWT_SIGNING_KEY`, `PAYMENTS_WEBHOOK_SECRET` | Repassadas pelo compose (profile `app`) para `Jwt__SigningKey` e `Payments__WebhookSecret` |
+| `ASPNETCORE_ENVIRONMENT` / `DOTNET_ENVIRONMENT` | Ambiente dos servicos no profile `app` (padrao `Development`) |
 
 Os valores em `appsettings*.json` e no `docker-compose.yml` sao apenas para desenvolvimento local; em producao use um gerenciador de segredos.
 
@@ -231,25 +272,34 @@ Os valores em `appsettings*.json` e no `docker-compose.yml` sao apenas para dese
 
 - **Append-only**: `LedgerEntry` nao tem setters publicos; so e criado via `LedgerEntry.Create`.
 - **Idempotencia**: indice unico no `EventId` (`uq_ledger_entries_event_id`); reentrega do mesmo evento nao gera lancamento duplicado.
-- **Dinheiro em `decimal`** (`numeric(18,2)` no banco), nunca ponto flutuante.
+- **Dinheiro em `decimal`** (`numeric(18,2)` no banco), nunca ponto flutuante; `Amount` sempre positivo, o sinal vem do `Type`. `LedgerEntry.Balance` soma `Credit - Debit` e recusa mistura de moedas.
 - **Trilha de auditoria**: tabela `infra.audit_logs`, alem do `CorrelationId` presente em todos os eventos.
 - **Modelo atual**: uma fatura emitida gera um lancamento `Debit` e uma fatura paga gera um `Credit`. Nao ha partidas dobradas com duas pernas por transacao, endpoint de estorno nem consulta de saldo derivado; sao evolucoes pendentes.
-- A idempotencia do ledger usa o `EventId` do evento, nao uma chave enviada pelo cliente HTTP.
+- A idempotencia do ledger usa o `EventId` do evento, nao uma chave enviada pelo cliente HTTP. O `EventId` e gravado no payload do Outbox, entao uma republicacao (falha apos publicar e antes de marcar `published_at`) reaproveita o mesmo `EventId`.
+
+### Limitacoes conhecidas
+
+- **Dupla quitacao concorrente**: `Invoice` nao tem token de concorrencia. Dois `PaymentConfirmedV1` distintos (pagamentos externos diferentes) processados ao mesmo tempo para a mesma fatura podem ambos passar pela checagem `Status == Paid` e gerar dois `InvoicePaidV1` com `EventId`s diferentes, ou seja, dois `Credit`. A idempotencia por `EventId` nao cobre esse caso.
+- **Confirmacao perdida no Payments.Worker**: se a publicacao de `PaymentConfirmedV1` falhar depois de gravar o `payment_attempt`, a reentrega cai na pre-checagem de duplicata e a confirmacao nao e republicada (nao ha Outbox nesse servico).
+- Escala fixa de 2 casas: moedas com 0 ou 3 casas decimais nao sao suportadas corretamente.
+- Nao ha conciliacao automatica de pagamento parcial/excedente, estorno, nem job de vencimento (`Overdue`).
+- O dispatcher do Outbox mantem a transacao aberta durante a publicacao do lote (ate 20 mensagens, com os retries do `ResilientEventBus`).
 
 ## CI
 
-O workflow `.github/workflows/ci.yml` roda `dotnet format --verify-no-changes`, build Release e os testes unitarios e de integracao (estes ultimos precisam de Docker).
+O workflow `.github/workflows/ci.yml` roda em `push`/`pull_request` para `main` e `develop`: `dotnet format --verify-no-changes`, build Release, testes unitarios e de integracao (Testcontainers usa o Docker do runner) e, em job separado, `docker build` das tres imagens (sem publicar). Permissoes: `contents: read`.
 
 ## ADRs
 
 - [0001 - Outbox Pattern](docs/adr/0001-outbox-pattern.md)
 - [0002 - Idempotencia por EventId](docs/adr/0002-idempotencia-por-event-id.md)
 - [0003 - Ledger append-only](docs/adr/0003-ledger-append-only.md)
+- [0004 - Dinheiro em decimal: escala, moeda e arredondamento](docs/adr/0004-dinheiro-decimal-escala-e-arredondamento.md)
 
 ## Decisoes Arquiteturais
 
 - **PostgreSQL schemas separados por BC**: um unico cluster RDS com schemas `billing`, `payments`, `ledger` e `infra`, mantendo isolamento logico sem overhead de multiplos bancos.
-- **Outbox Pattern**: eventos publicados atomicamente na mesma transacao da mudanca de estado; dispatcher com `SKIP LOCKED` garante processamento seguro em paralelo.
+- **Outbox Pattern**: eventos publicados atomicamente na mesma transacao da mudanca de estado; o dispatcher seleciona com `FOR UPDATE SKIP LOCKED` dentro de uma transacao que so fecha depois de marcar `published_at`, entao instancias paralelas nao publicam a mesma linha.
 - **MassTransit sobre SNS/SQS**: abstracao que permite `InMemory` em testes e `SQS` em producao via feature flag `Messaging:Transport`.
 - **Resiliencia no Billing.Api**: `ResilientEventBus` protege publish outbound com retry exponencial, timeout e circuit breaker; `AddStandardResilienceHandler` prepara clientes HTTP para webhooks e callbacks de saida.
 - **HMAC-SHA256 no webhook**: provedores externos autenticam via assinatura do payload; JWT nao e usado em endpoints de webhook.
@@ -260,7 +310,7 @@ O workflow `.github/workflows/ci.yml` roda `dotnet format --verify-no-changes`, 
 | Ameaca               | Mitigacao                                                                      |
 | -------------------- | ------------------------------------------------------------------------------ |
 | Replay de pagamento  | Unique index `(provider, external_payment_id)` + idempotencia no handler       |
-| Double spending      | Transicao de estado idempotente na Invoice; estado verificado antes de aplicar |
+| Double spending      | Estado verificado antes de `MarkAsPaid` e valor/moeda conferidos; sem token de concorrencia (ver Limitacoes) |
 | Spoofing de webhook  | Validacao de assinatura HMAC no endpoint `/payments/webhook`                   |
 | Privilege escalation | JWT + RBAC via policies por endpoint; claims validados no middleware           |
 | Exposicao de erros   | ProblemDetails sem stack trace em producao; logs estruturados internos         |
