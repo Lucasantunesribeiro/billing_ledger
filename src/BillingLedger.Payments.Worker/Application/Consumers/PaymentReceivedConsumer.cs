@@ -70,6 +70,8 @@ public sealed class PaymentReceivedConsumer(
         {
             InvoiceId = attempt.InvoiceId,
             ExternalPaymentId = attempt.ExternalPaymentId,
+            Amount = attempt.Amount,
+            Currency = msg.Currency,
             ConfirmedAt = DateTime.UtcNow,
             CorrelationId = msg.CorrelationId
         }, ct);

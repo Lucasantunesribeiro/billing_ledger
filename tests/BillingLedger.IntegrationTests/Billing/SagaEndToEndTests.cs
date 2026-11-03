@@ -263,6 +263,61 @@ public sealed class SagaEndToEndTests : IAsyncLifetime
             .Should().BeEmpty("duplicate PaymentConfirmedV1 must never fault");
     }
 
+    // ─── Pagamento parcial nao quita fatura ──────────────────────────────────
+
+    [Fact]
+    public async Task PartialPayment_ShouldNotMarkInvoicePaid_NorCreateCredit()
+    {
+        var correlationId = Guid.NewGuid();
+        var externalPaymentId = $"pix-partial-{Guid.NewGuid():N}";
+
+        await using var scope = _services.CreateAsyncScope();
+        var repo = scope.ServiceProvider.GetRequiredService<IInvoiceRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var invoice = Invoice.Create(
+            Guid.NewGuid(), Money.Of(300m, "BRL"),
+            DateTime.UtcNow.AddDays(30), $"PARTIAL-{Guid.NewGuid():N}", correlationId);
+        await repo.AddAsync(invoice, CancellationToken.None);
+        invoice.Issue(correlationId);
+        await uow.SaveChangesAsync(CancellationToken.None);
+        var invoiceId = invoice.Id.Value;
+
+        // Antes da correcao, qualquer valor (ate 0,01) marcava a fatura como paga e gerava
+        // um CREDIT de 300,00 no ledger.
+        await _harness.Bus.Publish(new PaymentReceivedV1
+        {
+            InvoiceId = invoiceId,
+            ExternalPaymentId = externalPaymentId,
+            Provider = "PIX",
+            Amount = 299.99m,
+            Currency = "BRL",
+            ReceivedAt = DateTime.UtcNow,
+            CorrelationId = correlationId
+        });
+        await WaitUntilConsumedCount<PaymentConfirmedV1>(1);
+
+        var confirmed = _harness.Published.Select<PaymentConfirmedV1>()
+            .Single(m => m.Context.Message.InvoiceId == invoiceId).Context.Message;
+        confirmed.Amount.Should().Be(299.99m, "Payments repassa o valor pago");
+        confirmed.Currency.Should().Be("BRL");
+
+        var dispatcher = _services.GetRequiredService<OutboxDispatcherService>();
+        await dispatcher.ProcessBatchAsync(CancellationToken.None);
+
+        await using var assertScope = _services.CreateAsyncScope();
+        var billingDb = assertScope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var ledgerDb = assertScope.ServiceProvider.GetRequiredService<LedgerDbContext>();
+        var paymentsDb = assertScope.ServiceProvider.GetRequiredService<PaymentsDbContext>();
+
+        (await billingDb.Invoices.FirstAsync(i => i.Id == EntityId.From(invoiceId)))
+            .Status.Should().Be(InvoiceStatus.Issued);
+        (await ledgerDb.LedgerEntries.AnyAsync(e => e.InvoiceId == invoiceId && e.Type == LedgerEntryType.Credit))
+            .Should().BeFalse();
+        (await paymentsDb.PaymentAttempts.SingleAsync(p => p.ExternalPaymentId == externalPaymentId))
+            .Amount.Should().Be(299.99m, "a tentativa fica registrada para conciliacao");
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private static async Task WaitForAsync(

@@ -42,6 +42,28 @@ public sealed class PaymentConfirmedConsumer(
             return; // Silent ACK — never DLQ
         }
 
+        // Conferencia de valor/moeda: um pagamento parcial (ou em outra moeda) nao pode
+        // quitar a fatura, senao o ledger registraria um CREDIT do valor cheio que nao entrou.
+        // A tentativa continua registrada em payments.payment_attempts para conciliacao.
+        if (msg.Amount is null)
+        {
+            logger.LogWarning(
+                "PaymentConfirmedV1 {EventId} for Invoice {InvoiceId} has no Amount (legacy V1 message); " +
+                "accepting without amount check",
+                msg.EventId, msg.InvoiceId);
+        }
+        else if (msg.Amount.Value != invoice.Amount.Amount
+                 || (msg.Currency is not null
+                     && !string.Equals(msg.Currency, invoice.Amount.Currency, StringComparison.OrdinalIgnoreCase)))
+        {
+            logger.LogWarning(
+                "Payment amount mismatch for Invoice {InvoiceId}: paid {PaidAmount} {PaidCurrency}, " +
+                "expected {ExpectedAmount} {ExpectedCurrency}. Invoice NOT marked as Paid. EventId={EventId}",
+                msg.InvoiceId, msg.Amount, msg.Currency ?? invoice.Amount.Currency,
+                invoice.Amount.Amount, invoice.Amount.Currency, msg.EventId);
+            return; // ACK — requer conciliacao manual; reprocessar nao mudaria o resultado
+        }
+
         invoice.MarkAsPaid(msg.CorrelationId);
 
         // Atomic write: Invoice status + InvoicePaidV1 outbox message in one transaction

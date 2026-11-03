@@ -4,4 +4,5 @@ public sealed record WebhookPaymentRequest(
     Guid InvoiceId,
     string ExternalPaymentId,
     string Provider,
-    decimal Amount);
+    decimal Amount,
+    string? Currency = null);

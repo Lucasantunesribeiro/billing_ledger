@@ -9,5 +9,7 @@ public sealed record LedgerEntryCreatedV1
     public required Guid InvoiceId { get; init; }
     public required string Type { get; init; }  // Debit | Credit
     public required decimal Amount { get; init; }
+    /// <summary>Moeda ISO 4217 do lancamento (aditivo ao V1; ainda nao ha produtor deste evento).</summary>
+    public string? Currency { get; init; }
     public required DateTime OccurredAt { get; init; }
 }

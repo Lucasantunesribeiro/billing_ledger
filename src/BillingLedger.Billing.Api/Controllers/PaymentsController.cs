@@ -68,6 +68,7 @@ public sealed class PaymentsController(
             ExternalPaymentId = payload.ExternalPaymentId,
             Provider = payload.Provider,
             Amount = payload.Amount,
+            Currency = payload.Currency,
             ReceivedAt = DateTime.UtcNow,
             CorrelationId = correlationId
         }, ct);
