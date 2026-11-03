@@ -239,32 +239,15 @@ Teste unitario focado na resiliencia do barramento:
 dotnet test tests/BillingLedger.Billing.UnitTests --filter "FullyQualifiedName~ResilientEventBusTests"
 ```
 
-## Deploy gratuito (demo publica)
+## Deploy gratuito (proposta)
 
-Opcao mais simples sem custo e sem cartao: **Billing.Api no Render (free web service, Docker) + PostgreSQL no Neon (free)**, em modo demo de processo unico. O arquivo [`render.yaml`](render.yaml) descreve o servico.
+Nao ha demo publica hoje e nenhum deploy foi configurado. Proposta sem custo e sem cartao, para o dono executar:
 
-O que a demo cobre: Swagger, criar/emitir/cancelar/listar faturas (JWT), validacao de dinheiro (ex.: `10.005` -> 400), Outbox gravado e despachado, webhook com HMAC.
-O que a demo **nao** cobre: `Messaging__Transport=InMemory` nao tem Payments.Worker nem Ledger.Worker no processo, entao o webhook publica `PaymentReceivedV1` sem consumidor e a fatura nao chega a `Paid`, e nenhum lancamento de ledger e gravado. Para a saga completa use o `docker compose --profile app` local (ou SNS/SQS reais).
-
-Passo a passo:
-
-1. **Neon**: crie um projeto free em <https://neon.tech> e copie a connection string. Converta para o formato Npgsql:
-   `Host=<host>.neon.tech;Database=neondb;Username=<usuario>;Password=<senha>;SSL Mode=Require`.
-2. **Render**: em <https://dashboard.render.com> escolha *New > Blueprint*, conecte este repositorio e selecione `render.yaml`. Preencha os segredos pedidos:
-   - `ConnectionStrings__Postgres`: a string do passo 1;
-   - `Jwt__SigningKey`: valor aleatorio com 32+ caracteres (ex.: `openssl rand -base64 48`);
-   - `Payments__WebhookSecret`: valor aleatorio.
-3. A primeira subida aplica as migrations do schema `billing` (`Database__MigrateOnStartup=true`). Num banco vazio o EF loga um `ERR` na consulta a `billing.__ef_migrations` antes de cria-la; e esperado.
-4. Gere um token para o Swagger com os mesmos valores do servico (issuer/audience padrao de producao em `appsettings.json`):
-   ```bash
-   JWT_SIGNING_KEY='<mesmo valor do Render>' JWT_ISSUER=billing-ledger JWT_AUDIENCE=billing-ledger-api \
-     dotnet script tools/gen-token.csx demo-user Finance
-   ```
-5. Abra `https://<servico>.onrender.com/swagger`, clique em **Authorize** e cole o token.
-
-Limitacoes do plano free: o servico dorme apos ~15 min sem trafego (primeira requisicao seguinte demora); o rate limit (100 req/min por IP) enxerga o IP do proxy do Render, entao e compartilhado entre visitantes. Com `autoDeploy: true`, o Render publica a cada push em `main`; nenhum workflow do GitHub Actions faz deploy.
-
-Validacao local do modo demo (feita com Postgres local): `/health` 200, `/swagger/index.html` 200, migrations aplicadas, fatura criada e emitida, `10.005` rejeitado com 400, webhook assinado aceito com 200 e mensagem do Outbox publicada.
+- **Billing.Api no Render** (free web service, runtime Docker, `src/BillingLedger.Billing.Api/Dockerfile`, contexto na raiz, `PORT=8080`, health check `/health`) + **PostgreSQL no Neon** (free).
+- Variaveis: `ConnectionStrings__Postgres` (formato Npgsql com `SSL Mode=Require`), `Jwt__SigningKey` (32+ caracteres), `Payments__WebhookSecret`, `Messaging__Transport=InMemory`, `Swagger__Enabled=true`, `Database__MigrateOnStartup=true`.
+- Token para o Swagger: `JWT_SIGNING_KEY=<mesma chave> JWT_ISSUER=billing-ledger JWT_AUDIENCE=billing-ledger-api dotnet script tools/gen-token.csx demo-user Finance`.
+- Limite do modo de processo unico: sem Payments.Worker/Ledger.Worker, o webhook nao leva a fatura a `Paid` e nao ha lancamentos de ledger. Saga completa exigiria os workers (outros servicos) e um broker gratuito (ex.: CloudAMQP), o que pede trocar o transporte SQS do MassTransit.
+- O modo demo foi validado localmente (Production + InMemory + Postgres local): `/health` 200, Swagger 200, migrations aplicadas na subida, fatura criada/emitida, `10.005` -> 400, webhook assinado -> 200. Plano free do Render dorme apos ociosidade.
 
 ## Deploy AWS (Milestone 3)
 
