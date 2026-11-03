@@ -42,6 +42,11 @@ public sealed class OutboxDispatcherService(
         var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
         var eventBus = scope.ServiceProvider.GetRequiredService<IEventBus>();
 
+        // SKIP LOCKED so protege enquanto a transacao do SELECT estiver aberta. Sem transacao
+        // explicita cada comando roda em autocommit, o lock e liberado logo apos o SELECT e duas
+        // instancias publicavam a mesma linha. A transacao fica aberta ate gravar published_at.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
         // SKIP LOCKED ensures concurrent instances don't double-process the same rows
         var messages = await db.OutboxMessages
             .FromSqlRaw($"""
@@ -103,5 +108,6 @@ public sealed class OutboxDispatcherService(
         }
 
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 }
