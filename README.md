@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/Lucasantunesribeiro/billing_ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucasantunesribeiro/billing_ledger/actions/workflows/ci.yml)
 ![.NET 9](https://img.shields.io/badge/.NET-9-512BD4)
-![Tests](https://img.shields.io/badge/tests-74%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 Backend enterprise-grade event-driven para emissao de cobrancas, processamento de pagamentos e conciliacao via ledger, construido em **.NET 9 / C#** com DDD, Outbox Pattern, idempotencia, mensageria real na AWS e resiliencia para falhas transientes no `Billing.Api`.
@@ -214,6 +213,38 @@ npm install
 npx cdk bootstrap
 npx cdk deploy --all
 ```
+
+## Variaveis de Ambiente
+
+Veja [`.env.example`](.env.example). Todas podem ser definidas como variaveis de ambiente (separador `__` para chaves aninhadas) e sobrescrevem o `appsettings.json`.
+
+| Variavel                    | Uso                                                    |
+| --------------------------- | ------------------------------------------------------ |
+| `POSTGRES_USER/PASSWORD/DB` | Credenciais do Postgres no `docker-compose.yml`        |
+| `ConnectionStrings__Postgres` | Conexao com o PostgreSQL (API e workers)             |
+| `Jwt__SigningKey`           | Chave de assinatura dos tokens JWT (minimo 32 caracteres) |
+| `Payments__WebhookSecret`   | Segredo HMAC-SHA256 do webhook de pagamentos           |
+
+Os valores em `appsettings*.json` e no `docker-compose.yml` sao apenas para desenvolvimento local; em producao use um gerenciador de segredos.
+
+## Garantias do Ledger e Limitacoes
+
+- **Append-only**: `LedgerEntry` nao tem setters publicos; so e criado via `LedgerEntry.Create`.
+- **Idempotencia**: indice unico no `EventId` (`uq_ledger_entries_event_id`); reentrega do mesmo evento nao gera lancamento duplicado.
+- **Dinheiro em `decimal`** (`numeric(18,2)` no banco), nunca ponto flutuante.
+- **Trilha de auditoria**: tabela `infra.audit_logs`, alem do `CorrelationId` presente em todos os eventos.
+- **Modelo atual**: uma fatura emitida gera um lancamento `Debit` e uma fatura paga gera um `Credit`. Nao ha partidas dobradas com duas pernas por transacao, endpoint de estorno nem consulta de saldo derivado; sao evolucoes pendentes.
+- A idempotencia do ledger usa o `EventId` do evento, nao uma chave enviada pelo cliente HTTP.
+
+## CI
+
+O workflow `.github/workflows/ci.yml` roda `dotnet format --verify-no-changes`, build Release e os testes unitarios e de integracao (estes ultimos precisam de Docker).
+
+## ADRs
+
+- [0001 - Outbox Pattern](docs/adr/0001-outbox-pattern.md)
+- [0002 - Idempotencia por EventId](docs/adr/0002-idempotencia-por-event-id.md)
+- [0003 - Ledger append-only](docs/adr/0003-ledger-append-only.md)
 
 ## Decisoes Arquiteturais
 
