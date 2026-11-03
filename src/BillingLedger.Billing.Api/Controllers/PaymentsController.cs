@@ -25,6 +25,21 @@ public sealed class PaymentsController(
     /// Validates HMAC-SHA256 signature then publishes PaymentReceivedV1 directly
     /// to the event bus — no Outbox required for inbound external events.
     /// </summary>
+    /// <remarks>
+    /// Sem JWT. O corpo bruto e assinado com HMAC-SHA256 e enviado no header
+    /// `X-Webhook-Signature: sha256=&lt;hex&gt;`. Corpo (WebhookPaymentRequest):
+    ///
+    ///     {
+    ///       "invoiceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    ///       "externalPaymentId": "pix-abc123",
+    ///       "provider": "PIX",
+    ///       "amount": 150.35,
+    ///       "currency": "BRL"
+    ///     }
+    ///
+    /// `amount` com mais de 2 casas ou menor/igual a zero retorna 400. Reenvio do mesmo
+    /// (provider, externalPaymentId) e descartado pelo Payments.Worker (idempotente).
+    /// </remarks>
     [HttpPost("webhook")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

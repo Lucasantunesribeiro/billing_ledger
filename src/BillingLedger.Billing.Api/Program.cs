@@ -6,6 +6,7 @@ using BillingLedger.Billing.Api.Domain.Repositories;
 using BillingLedger.Billing.Api.Infrastructure.Audit;
 using BillingLedger.Billing.Api.Infrastructure.Messaging;
 using BillingLedger.Billing.Api.Infrastructure.Observability;
+using BillingLedger.Billing.Api.Infrastructure.OpenApi;
 using BillingLedger.Billing.Api.Infrastructure.Persistence;
 using BillingLedger.Billing.Api.Infrastructure.Persistence.Interceptors;
 using BillingLedger.Billing.Api.Infrastructure.Persistence.Repositories;
@@ -89,7 +90,29 @@ builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "BillingLedger API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "BillingLedger API",
+        Version = "v1",
+        Description = """
+            Emissao de faturas, recebimento de pagamentos por webhook e registro em ledger (Debit na emissao, Credit no pagamento).
+
+            **Autenticacao**
+            - Endpoints de faturas: JWT Bearer (HS256). Escrita exige papel `Finance` ou `Admin`; leitura aceita qualquer usuario autenticado. Use o botao **Authorize**.
+            - `POST /api/payments/webhook`: sem JWT; exige o header `X-Webhook-Signature: sha256=<HMAC-SHA256 do corpo bruto>` com o segredo `Payments:WebhookSecret`.
+
+            **Dinheiro** (ADR 0004)
+            - `amount` e decimal com no maximo 2 casas e maior que zero (`10.005` e rejeitado com 400; nao ha arredondamento implicito).
+            - `currency` e ISO 4217 em maiusculas (ex.: `BRL`). No webhook e opcional; quando ausente, vale a moeda da fatura.
+            - Uma fatura so passa a `Paid` se valor e moeda do pagamento baterem exatamente com a fatura.
+
+            **Erros**: respostas 4xx/5xx seguem RFC 7807 (`application/problem+json`).
+            """
+    });
+
+    var xmlDocs = Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml");
+    if (File.Exists(xmlDocs))
+        c.IncludeXmlComments(xmlDocs);
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -98,23 +121,11 @@ builder.Services.AddSwaggerGen(c =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Insira o token JWT."
+        Description = "Cole apenas o token JWT (sem o prefixo Bearer)."
     });
 
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
+    // Cadeado apenas nas operacoes com [Authorize] (o webhook usa HMAC, nao JWT).
+    c.OperationFilter<SecurityRequirementsOperationFilter>();
 });
 
 // ─── ProblemDetails + Global Exception Handler ────────────────────────────────
@@ -250,10 +261,20 @@ var app = builder.Build();
 // ─── Pipeline ─────────────────────────────────────────────────────────────────
 app.UseExceptionHandler();
 
-if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
+// Swagger: sempre em Development/Testing; nos demais ambientes so com Swagger:Enabled=true
+// (usado no deploy de demonstracao).
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing")
+    || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(ui =>
+    {
+        ui.DocumentTitle = "BillingLedger API - documentacao";
+        ui.SwaggerEndpoint("/swagger/v1/swagger.json", "BillingLedger API v1");
+        ui.DisplayRequestDuration();
+        ui.EnableTryItOutByDefault();
+        ui.DefaultModelsExpandDepth(1);
+    });
 }
 
 app.MapHealthChecks("/health");
