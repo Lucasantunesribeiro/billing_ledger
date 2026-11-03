@@ -1,0 +1,31 @@
+# Blueprint do Render para a demo publica gratuita do Billing.Api.
+# Modo demo: um unico processo (Billing.Api) com mensageria InMemory e PostgreSQL no Neon (free).
+# Payments.Worker e Ledger.Worker NAO sobem aqui (ver "Deploy gratuito" no README).
+# Segredos com sync: false sao preenchidos no painel do Render ao criar o Blueprint.
+services:
+  - type: web
+    name: billing-ledger-api
+    runtime: docker
+    plan: free
+    branch: main
+    autoDeploy: true
+    dockerContext: .
+    dockerfilePath: ./src/BillingLedger.Billing.Api/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Messaging__Transport
+        value: InMemory
+      - key: Swagger__Enabled
+        value: "true"
+      - key: Database__MigrateOnStartup
+        value: "true"
+      - key: ConnectionStrings__Postgres
+        sync: false
+      - key: Jwt__SigningKey
+        sync: false
+      - key: Payments__WebhookSecret
+        sync: false
