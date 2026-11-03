@@ -40,6 +40,9 @@ public sealed class Invoice : AggregateRoot
         Guid correlationId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(externalReference);
+        // Fatura de valor zero geraria lancamento de ledger sem efeito e "pagamento" de nada.
+        if (amount.Amount <= 0m)
+            throw new ArgumentOutOfRangeException(nameof(amount), amount.Amount, "Invoice amount must be greater than zero.");
 
         var invoice = new Invoice
         {

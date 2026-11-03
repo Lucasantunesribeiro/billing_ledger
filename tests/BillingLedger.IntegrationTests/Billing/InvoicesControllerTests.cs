@@ -56,6 +56,37 @@ public class InvoicesControllerTests(BillingApiFactory factory)
         problem!.Status.Should().Be(400);
     }
 
+    [Theory]
+    [InlineData("0")]
+    [InlineData("10.005")]
+    public async Task CreateInvoice_WithZeroOrSubCentAmount_ShouldReturn400(string raw)
+    {
+        // Sem esta validacao, 10.005 seria arredondado silenciosamente pela coluna numeric(18,2)
+        // e o evento InvoiceIssuedV1 carregaria um valor diferente do persistido.
+        var request = new CreateInvoiceRequest(
+            CustomerId: Guid.NewGuid(),
+            Amount: decimal.Parse(raw, System.Globalization.CultureInfo.InvariantCulture),
+            Currency: "BRL",
+            DueDate: DateTime.UtcNow.AddDays(30),
+            ExternalReference: null);
+
+        var response = await _client.PostAsJsonAsync("/api/invoices", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateInvoice_ShouldPersistAndReturnExactDecimalAmount()
+    {
+        var request = new CreateInvoiceRequest(Guid.NewGuid(), 1234567.89m, "BRL", DateTime.UtcNow.AddDays(30), null);
+
+        var created = await (await _client.PostAsJsonAsync("/api/invoices", request))
+            .Content.ReadFromJsonAsync<InvoiceResponse>();
+        var fetched = await _client.GetFromJsonAsync<InvoiceResponse>($"/api/invoices/{created!.Id}");
+
+        fetched!.Amount.Should().Be(1234567.89m);
+    }
+
     [Fact]
     public async Task CreateInvoice_WithPastDueDate_ShouldReturn400ProblemDetails()
     {

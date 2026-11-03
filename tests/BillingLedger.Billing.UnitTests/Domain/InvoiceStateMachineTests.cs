@@ -32,6 +32,26 @@ public class InvoiceStateMachineTests
     }
 
     [Fact]
+    public void Create_WithZeroAmount_ShouldThrow()
+    {
+        var act = () => Invoice.Create(_customerId, Money.Of(0m, "BRL"), _dueDate, "INV-ZERO", _correlationId);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*greater than zero*");
+    }
+
+    [Fact]
+    public void Issue_ShouldCarryExactDecimalAmountAndCurrencyInEvent()
+    {
+        var invoice = Invoice.Create(_customerId, Money.Of(1234567.89m, "USD"), _dueDate, "INV-EXACT", _correlationId);
+        invoice.ClearDomainEvents();
+
+        invoice.Issue(_correlationId);
+
+        var issued = invoice.DomainEvents.OfType<InvoiceIssuedDomainEvent>().Single();
+        issued.Amount.Should().Be(Money.Of(1234567.89m, "USD"));
+    }
+
+    [Fact]
     public void Create_ShouldRaiseInvoiceCreatedDomainEvent()
     {
         var invoice = CreateDraftInvoice();

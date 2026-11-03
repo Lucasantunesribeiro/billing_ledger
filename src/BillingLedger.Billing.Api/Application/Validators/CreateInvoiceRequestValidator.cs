@@ -1,4 +1,5 @@
 using BillingLedger.Billing.Api.Application.Commands;
+using BillingLedger.SharedKernel.Primitives;
 using FluentValidation;
 
 namespace BillingLedger.Billing.Api.Application.Validators;
@@ -10,9 +11,12 @@ public sealed class CreateInvoiceRequestValidator : AbstractValidator<CreateInvo
         RuleFor(x => x.CustomerId)
             .NotEmpty().WithMessage("CustomerId is required.");
 
+        // Sem arredondamento silencioso: numeric(18,2) arredondaria no banco e o evento
+        // publicado divergiria do valor persistido (ver ADR 0004).
         RuleFor(x => x.Amount)
-            .GreaterThanOrEqualTo(0).WithMessage("Amount must be non-negative.")
-            .LessThanOrEqualTo(999_999_999).WithMessage("Amount exceeds maximum allowed value.");
+            .GreaterThan(0).WithMessage("Amount must be greater than zero.")
+            .LessThanOrEqualTo(999_999_999).WithMessage("Amount exceeds maximum allowed value.")
+            .Must(Money.HasValidScale).WithMessage("Amount must have at most 2 decimal places.");
 
         RuleFor(x => x.Currency)
             .NotEmpty().WithMessage("Currency is required.")
