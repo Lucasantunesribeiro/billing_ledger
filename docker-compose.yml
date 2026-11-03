@@ -46,6 +46,69 @@ services:
       timeout: 5s
       retries: 20
 
+  # ─── Servicos .NET (opcionais) ──────────────────────────────────────────────
+  # Sobem apenas com: docker compose --profile app up -d --build
+  # As migrations NAO sao aplicadas automaticamente: rode `dotnet ef database update`
+  # (ver README) contra o Postgres do compose antes de subir este profile.
+  billing-api:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: src/BillingLedger.Billing.Api/Dockerfile
+    container_name: billing_api
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-billing_ledger};Username=${POSTGRES_USER:-billing_user};Password=${POSTGRES_PASSWORD:-billing_pass}
+      Messaging__Transport: SQS
+      Messaging__LocalStackServiceUrl: http://localstack:4566
+      Messaging__BillingApiQueueName: billing-worker-queue
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-dev-signing-key-must-be-32-chars!!}
+      Payments__WebhookSecret: ${PAYMENTS_WEBHOOK_SECRET:-test-secret}
+    ports:
+      - "5082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  payments-worker:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: src/BillingLedger.Payments.Worker/Dockerfile
+    container_name: billing_payments_worker
+    environment:
+      DOTNET_ENVIRONMENT: ${DOTNET_ENVIRONMENT:-Development}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-billing_ledger};Username=${POSTGRES_USER:-billing_user};Password=${POSTGRES_PASSWORD:-billing_pass}
+      Messaging__Transport: SQS
+      Messaging__LocalStackServiceUrl: http://localstack:4566
+      Messaging__QueueName: payments-worker-queue
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  ledger-worker:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: src/BillingLedger.Ledger.Worker/Dockerfile
+    container_name: billing_ledger_worker
+    environment:
+      DOTNET_ENVIRONMENT: ${DOTNET_ENVIRONMENT:-Development}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-billing_ledger};Username=${POSTGRES_USER:-billing_user};Password=${POSTGRES_PASSWORD:-billing_pass}
+      Messaging__Transport: SQS
+      Messaging__LocalStackServiceUrl: http://localstack:4566
+      Messaging__InvoiceIssuedQueueName: ledger-worker-queue
+      Messaging__InvoicePaidQueueName: ledger-worker-queue
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   localstack_data:

@@ -1,0 +1,16 @@
+# Artefatos locais nao podem entrar no contexto: obj/project.assets.json do host
+# quebraria o restore dentro da imagem.
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+**/*.user
+.env
+infra/
+docs/
+tools/
+tests/
